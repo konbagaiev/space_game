@@ -3,6 +3,27 @@
 > Change log, newest on top. Append-only (we don't edit history).
 > Current state is in [SUMMARY.md](SUMMARY.md).
 
+## 2026-10-23
+
+- **Ops: the server key may now delete session traces** (AWS IAM). IAM user `vega-sentinels-mailer` (the
+  server's key) got the inline policy `VegaSentinelsSessionsS3` — `s3:PutObject` / `GetObject` /
+  `DeleteObject` on `arn:aws:s3:::vega-sentinels-assets/recordings/sessions/*` only. IAM simulation: allowed
+  on that prefix, denied for `recordings/level0-intro.*` and `assets/*`. A production `reset.js --all`
+  (inside the app container) can now delete the traces and truncate instead of aborting. SUMMARY,
+  DECISIONS §165 (dated note) and the `reset-progress` skill updated.
+- **Docs sweep after drift-fix Phases 1–4** (docs). The duplication audit now marks A1–A5, B1, B2 and the
+  menu part of A6 fixed with their commits, and lists what is still open (B5, B6 = Phase 5; A6 remainder;
+  A7–A9, B3, B4, C*). The drift-fix plan's status says Phases 1–4 shipped, Phase 5 pending, with its Phase 5
+  line anchors re-checked and updated. SUMMARY fixes: the **Kinetic** skill is +5% damage for every
+  non-rocket weapon (the "+0.5° aim-assist cone" no longer exists); a netsim room does **not** receive the
+  account record (`activeShip`), so the last-kill reward crate always drops there (B6, was described as
+  fixed); the dev `?record` recorder does not capture skills (B5); `enterMenu()` runs the deferred ship
+  rebuild; the shop list names `isShopItem`.
+- **Plan (missed on 2026-10-19): Claude Code + Codex agent-infrastructure organization** (docs,
+  `docs/plans/ai-agent-infrastructure-organization.md`, committed in `66f786d`). A proposal to keep
+  `CLAUDE.md` the one source of project rules and make provider files (Claude, Codex) thin adapters over
+  shared role contracts, skills and the feature pipeline. Planning only; nothing implemented.
+
 ## 2026-10-22
 
 - **Server economy guards** (server, `[2026-10-22-1953-catalog-economy-guards]`, plan

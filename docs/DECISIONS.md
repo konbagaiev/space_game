@@ -7024,7 +7024,8 @@ no longer existed.
 - **Accepted race.** A session uploaded between listing the keys and the truncate loses its row and its
   object is orphaned. Locking `gameplay_sessions` across network deletes would stall live uploads instead.
 - **Ops:** the server IAM key needs `s3:DeleteObject` on `recordings/sessions/*`. Without it a prod `--all`
-  aborts before truncating — safe, just not done.
+  aborts before truncating — safe, just not done. *(2026-10-23: granted — inline policy
+  `VegaSentinelsSessionsS3` on IAM user `vega-sentinels-mailer`, Put/Get/Delete on that prefix only.)*
 
 The per-player reset is unchanged: it still keeps `sessions`, `perf_samples` and `gameplay_sessions` (now an
 explicit, commented keep-list), and does not touch S3. Alongside, `NEW_PLAYER_DEFAULTS` (`db.js`) became the

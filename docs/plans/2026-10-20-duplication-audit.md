@@ -1,9 +1,22 @@
 # Duplication audit — client + server (2026-10-20)
 
-**Status:** findings only. Nothing here is fixed (except §0, which triggered the audit). The drifted bugs
-A1–A6, B1, B2, B5, B6 (plus a new base-menu state leak found the same day) are planned in
-[`2026-10-20-base-menu-state-and-drift-fixes.md`](2026-10-20-base-menu-state-and-drift-fixes.md). Each item is a
-candidate for its own change; pick them up one at a time (offer `/feature-pipeline` per CLAUDE.md).
+**Status (2026-10-23):** Phases 1–4 of
+[`2026-10-20-base-menu-state-and-drift-fixes.md`](2026-10-20-base-menu-state-and-drift-fixes.md) shipped and
+fixed **A1, A2, A3, A4, A5, B1, B2** and the menu entry/exit part of **A6** (plus §0 and the base-menu state
+leak found the same day). **Still open:**
+- **Planned (Phase 5 of that plan):** **B5** (`?record` drops skills), **B6** (netsim room never passes
+  `activeShip`).
+- **A6 remainder:** the staged text reveal is written twice; Welcome's Take off still launches straight
+  into the fight (kept deliberately).
+- **Not planned yet:** A7, A8, A9, B3, B4, C1–C17.
+
+Each open item is a candidate for its own change; pick them up one at a time (offer `/feature-pipeline` per
+CLAUDE.md). Line numbers below are as of 2026-10-20 and have drifted — re-read the code before acting.
+
+Fixed-by index: A1 + A4 → `7807850` (merge `ca754bd`, `2026-10-20-1816-launch-gate`); A6 menu part →
+`f9a88ad` (merge `8f9e705`, `2026-10-20-1659-base-menu-idle`, DECISIONS §162); A3 + A5 → `74751f4` (merge
+`6d0fc57`, `2026-10-22-1334-loadout-skill-stats`, §163); A2 + B1 + B2 → `0fb8416` (merge `384e083`,
+`2026-10-22-1953-catalog-economy-guards`, §164, §165).
 
 **Why this exists.** "Take off" sat at a different horizontal spot on each base-menu stage (720 / 671 / 635
 px at 1440 wide on Character / Missions / Loadout) because it lived inside a column whose width is restated
@@ -43,21 +56,21 @@ Sizes: **S** ≤ ½ day, **M** ~1–2 days, **L** more.
 
 | # | Finding | State | Visible to | Size |
 |---|---|---|---|---|
-| A1 | Map "Autopilot to destination" ignores the launch gate | **fixed 2026-10-20** | player | S |
-| A2 | Side-mission "Est. reward" / XP estimate is stale (~33 % low) | **drifted** ✔ | player | S |
-| A3 | Loadout ship stats ignore skills (Mobility) | **fixed 2026-10-22** | player | M |
-| A4 | Launch gate in 3 places; "can't launch" note can show twice | **fixed 2026-10-20** | player | S |
-| A5 | Shop "Owned" badge unstyled; ~120 lines of dead CSS | **fixed 2026-10-22** | player | S |
-| A6 | Welcome screen = a second, drifted launch/menu path | menu entry/exit **fixed** 2026-10-20; reveal dup + direct launch open | player (edge) | M |
+| A1 | Map "Autopilot to destination" ignores the launch gate | **fixed 2026-10-20** (`7807850`) | player | S |
+| A2 | Side-mission "Est. reward" / XP estimate is stale (~33 % low) | **fixed 2026-10-22** (`0fb8416`) | player | S |
+| A3 | Loadout ship stats ignore skills (Mobility) | **fixed 2026-10-22** (`74751f4`, §163) | player | M |
+| A4 | Launch gate in 3 places; "can't launch" note can show twice | **fixed 2026-10-20** (`7807850`) | player | S |
+| A5 | Shop "Owned" badge unstyled; ~120 lines of dead CSS | **fixed 2026-10-22** (`74751f4`) | player | S |
+| A6 | Welcome screen = a second, drifted launch/menu path | menu entry/exit **fixed** 2026-10-20 (`f9a88ad`, §162); reveal dup + direct launch **open** | player (edge) | M |
 | A7 | Three breakpoint systems; vw/vh wrong under forced rotation | drifted (derived) | player (phone) | M |
 | A8 | `#mainwin` column widths ×6; xp-bar clearance hand-derived | sync risk (caused §0) | player | S |
 | A9 | Money: 3 units, 3 golds, 2 balance readouts on Loadout | drifted | player | S–M |
-| B1 | `buyItem` sells price-0 / `buyable:false` items via direct API | **drifted** ✔ | server / economy | S |
-| B2 | `gameplay_sessions` missing from `--all` reset; new-player defaults ×3 | **drifted** ✔ | ops | S |
+| B1 | `buyItem` sells price-0 / `buyable:false` items via direct API | **fixed 2026-10-22** (`0fb8416`, §164) | server / economy | S |
+| B2 | `gameplay_sessions` missing from `--all` reset; new-player defaults ×3 | **fixed 2026-10-22** (`0fb8416`, §165) | ops | S |
 | B3 | Server `buildShip` matches by an id seed ships don't have | latent | server authority | S–M |
 | B4 | Dev fight flags applied in 5 places, already diverged | drifted | dev / netsim | M |
-| B5 | "Effective player build" in 5 places; `?record` drops skills | drifted | replay | M |
-| B6 | Server room never passes `activeShip` → reward crate always drops | drifted | netsim | S |
+| B5 | "Effective player build" in 5 places; `?record` drops skills | drifted — **open**, Phase 5 planned | replay | M |
+| B6 | Server room never passes `activeShip` → reward crate always drops | drifted — **open**, Phase 5 planned | netsim | S |
 | C1 | Skill list ×7 | sync risk | — | M |
 | C2 | Slot lists + weapon-group map, client vs server | sync risk | — | S |
 | C3 | Sell rate ×3, test checks a literal | sync risk | — | S |
@@ -92,6 +105,9 @@ Sizes: **S** ≤ ½ day, **M** ~1–2 days, **L** more.
 - Fix: one `canLaunch()` used by every launch control (see A4).
 
 ### A2. Side-mission reward estimate is stale — **drifted ✔**
+**Fixed 2026-10-22** (`0fb8416`, `2026-10-22-1953-catalog-economy-guards`): `missions.js expectedRun()`
+computes the estimate from the phases × ship catalog (card now ≈3510 / ≈2750); freighter comment fixed;
+guard `server/src/missions.test.js`.
 - `server/src/missions.js:38-39` hard-codes 40/40/100 per kill and 200 per boss and 14 wave kills. Catalog
   (`server/src/catalog_seed.js`): pirate gunner 50 (`:509`), rocket pirate 50 (`:487`), mini boss 125
   (`:518`), first boss 250 (`:534`). The generator's waves total 7+7+4 = 18, not 14. `git log -S` shows the
@@ -112,7 +128,8 @@ Sizes: **S** ≤ ½ day, **M** ~1–2 days, **L** more.
 - Related (2026-10-19 finding, not in the audits): the shop shows an engine "max speed" stat
   (`shop.js:53`) that never applies to the player — the player's cap is the flat `PLAYER_MAX_SPEED` 30,
   lifted only by Mobility (`client/src/sim-core/step-player.js:301`). Same root: the shop restates the
-  ship model instead of reading it.
+  ship model instead of reading it. **Also fixed 2026-10-22** (`74751f4`): the engine line no longer shows
+  `maxSpeed`; the Loadout bar gains a real **Top speed** stat (`PLAYER_MAX_SPEED × maxSpeedMul`).
 
 ### A4. Launch gate written three times; note can show twice — drifted
 **Fixed 2026-10-20** (`2026-10-20-1816-launch-gate`).
@@ -148,7 +165,8 @@ Sizes: **S** ≤ ½ day, **M** ~1–2 days, **L** more.
   (Onboarding-flow call — ask the maintainer explicitly.)
 - **Fixed 2026-10-20 (menu entry/exit part)** — [`2026-10-20-1659-base-menu-idle.md`](2026-10-20-1659-base-menu-idle.md):
   every menu entry goes through `enterMenu()`, every launcher through `leaveMenu()`; `showMain` hides
-  `#welcome`; Welcome's Take off has the `canTakeOff()` gate and clears `G.activeMission`/`G.pendingBriefing`;
+  `#welcome`; Welcome's Take off has the launch gate (then `canTakeOff()`, since 2026-10-20's launch-gate
+  run the shared `canLaunch()` from shop.js) and clears `G.activeMission`/`G.pendingBriefing`;
   SUMMARY's Level-1-lands-on-Welcome line corrected. Welcome itself is kept (DECISIONS §162).
 - **Known drift:** Welcome's Take off still launches straight into the fight (`reset()`), while the Main
   Window's goes through roam (`launchCampaign` → `enterRoam`). Kept deliberately (maintainer, 2026-10-20).
@@ -185,6 +203,9 @@ Sizes: **S** ≤ ½ day, **M** ~1–2 days, **L** more.
 ## B. Server, netsim, replay — drifted or latent
 
 ### B1. `buyItem` sells items the shop never offers — **drifted ✔**
+**Fixed 2026-10-22** (`0fb8416`, DECISIONS §164 amending §40.6): one `isShopItem(price, stats)` in
+`client/src/sim-core/shop-rules.js` feeds `buyableNow`, `classifyRarity` and `buyItem`, which returns
+`403 { error: 'not for sale' }`.
 - Shop rule `price > 0 && stats.buyable !== false` at `client/src/shop.js:169` (`buyableNow`) and
   `server/src/catalog_seed.js:347-348` (`classifyRarity`). `server/src/db.js:976-996` (`buyItem`) checks
   neither. A direct `POST /api/players/:id/buy` gets price-0 enemy parts for free (Boss hull comp 4, Medium
@@ -195,6 +216,10 @@ Sizes: **S** ≤ ½ day, **M** ~1–2 days, **L** more.
   `classifyRarity` use it; that test buys a priced, buyable row instead.
 
 ### B2. Reset lists and new-player defaults — **drifted ✔**
+**Fixed 2026-10-22** (`0fb8416`, DECISIONS §165): `PLAYER_SCOPED_TABLES` (incl. `gameplay_sessions`, pinned
+against `information_schema`) + an explicit per-player keep-list; `--all` deletes the S3 session traces first
+(refuses without S3 creds unless `--no-s3`); `NEW_PLAYER_DEFAULTS` in `db.js`. The IAM `s3:DeleteObject`
+grant on `recordings/sessions/*` was added 2026-10-23.
 - Per-player delete list `db.js:514`; `resetAllPlayers` TRUNCATE list `db.js:526`; tables `db.js:107-359`.
   `gameplay_sessions` (has `player_id`, **no FK**, `db.js:262-264`) is in neither, so `--all` leaves
   session rows (and S3 traces) pointing at deleted players; SUMMARY says `--all` "wipes every
@@ -203,7 +228,8 @@ Sizes: **S** ≤ ½ day, **M** ~1–2 days, **L** more.
   (defaults), `:498` (`registerPlayer` return), `:516` (reset UPDATE).
 - Fix: `PLAYER_SCOPED_TABLES` (+ note which the per-player reset keeps on purpose), one
   `NEW_PLAYER_DEFAULTS`, a test that every table with `player_id` is in the TRUNCATE list.
-- **Open question for the maintainer:** should `gameplay_sessions` survive `--all` (analytics) or not?
+- **Answered (maintainer, 2026-10-22):** `--all` wipes `gameplay_sessions` AND deletes their S3 traces; the
+  per-player reset keeps them.
 
 ### B3. Server `buildShip` matches by an id the seed doesn't have — latent
 - `server/src/sim-host.js:65-89` matches `s.id === shipId`; its catalog comes straight from
@@ -224,6 +250,9 @@ Sizes: **S** ≤ ½ day, **M** ~1–2 days, **L** more.
   `applyFightSpec(descriptor, spec)` in sim-core used at all four sites; socket + `trace.room` carry it.
 
 ### B5. "Effective player build" in five places; `?record` drops skills — drifted (replay)
+**Open** — the `?record` skills part is Phase 5 of the drift-fix plan; the five-places consolidation
+(`resolvePlayerBuild`) is not planned. The `main.js` lines below have moved (`beginRecordCapture` is now
+`:1789-1806`, `stopRecordSession` `:1809-1814`, live recorder skills `:1846`/`:1852`, playback `:1911`).
 - `client/src/ship-build.js:49-63` (beam + duel overrides); `main.js:1797-1802` (`?record` captures
   loadout/components, **no skills**; `stopRecordSession` `:1815-1816` passes none to `makeTrace`);
   `main.js:1839-1856` (live: duel, not beam — known); `main.js:1911-1915` (playback);
@@ -234,6 +263,7 @@ Sizes: **S** ≤ ½ day, **M** ~1–2 days, **L** more.
   output; move `DUEL_LOADOUT`/`DUEL_COMPONENTS` into `sim-core/duel-config.js`.
 
 ### B6. Server room never passes `activeShip` — drifted (netsim)
+**Open** — Phase 5 of the drift-fix plan (anchor still valid: `socket.js:155-156`).
 - `server/src/netsim/socket.js:155` → `createSimWorld` gets no `activeShip`, so `ownsReward` is always
   false in a room: the last-kill reward crate drops even when the player owns it. The browser differs.
 - Fix: pass the account's active-ship record.
@@ -383,13 +413,12 @@ tested.
 
 ## E. Suggested order
 
-1. **Player-visible drift, small:** A1 + A4 (one launch gate), A2 (reward estimate), A5 (badge + dead CSS),
-   B1 (buy gate). One batch, mostly S.
-2. **A3** (shop stats from the real ship build) — also removes the engine "max speed" confusion.
-3. **B2** after the maintainer answers the `gameplay_sessions` question.
+1. ~~**Player-visible drift, small:** A1 + A4, A2, A5, B1~~ — done (2026-10-20 / 2026-10-22).
+2. ~~**A3**~~ — done 2026-10-22.
+3. ~~**B2**~~ — done 2026-10-22.
 4. **Shared-module pass (§136 pattern):** C1 skills, C2 slots, C3 sell rate, C4 progression, B3 + C8
    catalog ids/flattening — one sim-core module each, server imports.
-5. **Replay/netsim integrity:** B4 + B5 (fight spec + resolved build), B6, then C9/C10 with the
+5. **Replay/netsim integrity:** B5 + B6 (next — Phase 5 of the drift-fix plan), B4 (fight spec), then C9/C10 with the
    determinism guards.
 6. **CSS system:** A8 + C14 + C15 + A7 (tokens, one grid rule, one scale convention) — a single
    layout-focused change with a full visual pass on device.

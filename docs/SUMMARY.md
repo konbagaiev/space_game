@@ -3,7 +3,7 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-10-22 (**Server economy guards** — the side-mission card's est. reward/XP is computed from the phases × ship catalog (≈3510 / ≈2750); `/buy` refuses price-0 and `buyable:false` rows (`isShopItem`, DECISIONS §164); `reset --all` deletes S3 session traces then truncates `gameplay_sessions` too, and without S3 creds refuses unless given `--no-s3` (§165); `NEW_PLAYER_DEFAULTS` is the one new-player baseline. Earlier today: **Loadout shows the ship you fly** — the stats bar reads the real build (`makePlayer`, skills included) and gains a **Top speed** stat; a skill spend rebuilds the ship at once; the Owned badge is a green pill; dead shop CSS removed; replay docs corrected — record URL, trace v4 shape, storage.) Previously: 2026-10-20 (**One launch gate** — Map Autopilot respects it, the can't-launch note shows once; `canLaunch()` in shop.js is the only copy of the predicate. Earlier today: **Nothing runs behind the base menu** — every way into the menu goes through `enterMenu()`, which stops the fight; launches leave through `leaveMenu()`; **Take off sits at one spot on every base stage** — its own full-width `#mainwin` grid row.) Previously: 2026-10-19 (**Mobility card text names what it does** — acceleration, turn rate, top-speed cap. Earlier today: **Take off centred on screen on Character/Craft.**) Previously: 2026-10-07 (**Server-run brawl measured on prod** — capacity and bandwidth numbers in the netsim section and `brawl-perf-findings.md` §6.) Previously: 2026-10-06 (**A server-run bot brawl (`?netbrawl=N`) and in-process server load metrics** — the same N v N fight simulated by a netsim room, the room's own step/snapshot/bytes/event-loop/CPU numbers on the card, in `perf_samples` (`srv`) and in a 10 s `evt: 'netsim-room'` log line; max 2 brawl rooms per process, 330 s backstop, 8 MB slow-link guard; `server/tools/brawl-capacity.mjs` for rooms-per-core; netsim aces now render (`ace: 1` descriptor). DECISIONS §161. Earlier today: **The brawl setup takes a typed bot count**; perf findings recorded in `docs/plans/2026-10-06-brawl-perf-findings.md`; brief for a server-run brawl in `docs/plans/2026-10-06-server-brawl-load-test.md`. 2026-10-05: **Battle sounds only from what is on screen; the radar is opaque** — DECISIONS §160. Earlier: **Double-sided ship materials draw in one pass on every tier** — the canopy glass was drawn twice per ship and re-ran three.js's program lookup each pass; −27 % render CPU at 50v50, no visible change, DECISIONS §159. Earlier: **The Sentinel pilot engages within 150 u of HIMSELF, turns and fights when chased to the arena edge (cornered), and stops on a still escort point instead of orbiting it** — wingman, duel aces and brawl bots alike, DECISIONS §158. Earlier: **The bot brawl fight is held over the home station** — a station `anchor` + 100 u leash per bot. 2026-10-04: **A bot brawl you can run on a phone (`?brawl`)** — N v N Sentinel bots over the home station, 60 s of wall time, per-window frame stats + a result card + `/api/perf` telemetry, DECISIONS §157. Also **the Sentinel pilot owns its reload stagger** — wingman and aces fire on one schedule from a private stream, `SENTINEL_PILOT` profile, DECISIONS §156. Before that, 2026-09-11: **The Sentinel pilot aims like a person, and a retreat actually leaves the fight.**
+**Updated:** 2026-10-23 (**Docs sweep after drift-fix Phases 1–4** — Kinetic skill text corrected (+5% damage on every non-rocket weapon; no aim-assist); the netsim room's `activeShip` claim corrected (not passed — audit B6, open) and `?record`'s missing skills noted (B5, open); `s3:DeleteObject` on `recordings/sessions/*` now granted, so a prod `reset --all` can run.) Previously: 2026-10-22 (**Server economy guards** — the side-mission card's est. reward/XP is computed from the phases × ship catalog (≈3510 / ≈2750); `/buy` refuses price-0 and `buyable:false` rows (`isShopItem`, DECISIONS §164); `reset --all` deletes S3 session traces then truncates `gameplay_sessions` too, and without S3 creds refuses unless given `--no-s3` (§165); `NEW_PLAYER_DEFAULTS` is the one new-player baseline. Earlier today: **Loadout shows the ship you fly** — the stats bar reads the real build (`makePlayer`, skills included) and gains a **Top speed** stat; a skill spend rebuilds the ship at once; the Owned badge is a green pill; dead shop CSS removed; replay docs corrected — record URL, trace v4 shape, storage.) Previously: 2026-10-20 (**One launch gate** — Map Autopilot respects it, the can't-launch note shows once; `canLaunch()` in shop.js is the only copy of the predicate. Earlier today: **Nothing runs behind the base menu** — every way into the menu goes through `enterMenu()`, which stops the fight; launches leave through `leaveMenu()`; **Take off sits at one spot on every base stage** — its own full-width `#mainwin` grid row.) Previously: 2026-10-19 (**Mobility card text names what it does** — acceleration, turn rate, top-speed cap. Earlier today: **Take off centred on screen on Character/Craft.**) Previously: 2026-10-07 (**Server-run brawl measured on prod** — capacity and bandwidth numbers in the netsim section and `brawl-perf-findings.md` §6.) Previously: 2026-10-06 (**A server-run bot brawl (`?netbrawl=N`) and in-process server load metrics** — the same N v N fight simulated by a netsim room, the room's own step/snapshot/bytes/event-loop/CPU numbers on the card, in `perf_samples` (`srv`) and in a 10 s `evt: 'netsim-room'` log line; max 2 brawl rooms per process, 330 s backstop, 8 MB slow-link guard; `server/tools/brawl-capacity.mjs` for rooms-per-core; netsim aces now render (`ace: 1` descriptor). DECISIONS §161. Earlier today: **The brawl setup takes a typed bot count**; perf findings recorded in `docs/plans/2026-10-06-brawl-perf-findings.md`; brief for a server-run brawl in `docs/plans/2026-10-06-server-brawl-load-test.md`. 2026-10-05: **Battle sounds only from what is on screen; the radar is opaque** — DECISIONS §160. Earlier: **Double-sided ship materials draw in one pass on every tier** — the canopy glass was drawn twice per ship and re-ran three.js's program lookup each pass; −27 % render CPU at 50v50, no visible change, DECISIONS §159. Earlier: **The Sentinel pilot engages within 150 u of HIMSELF, turns and fights when chased to the arena edge (cornered), and stops on a still escort point instead of orbiting it** — wingman, duel aces and brawl bots alike, DECISIONS §158. Earlier: **The bot brawl fight is held over the home station** — a station `anchor` + 100 u leash per bot. 2026-10-04: **A bot brawl you can run on a phone (`?brawl`)** — N v N Sentinel bots over the home station, 60 s of wall time, per-window frame stats + a result card + `/api/perf` telemetry, DECISIONS §157. Also **the Sentinel pilot owns its reload stagger** — wingman and aces fire on one schedule from a private stream, `SENTINEL_PILOT` profile, DECISIONS §156. Before that, 2026-09-11: **The Sentinel pilot aims like a person, and a retreat actually leaves the fight.**
 `flySentinel` — the wingman AND every `?duel` ace, one shared constant block — now carries a tracking error
 on its PERCEIVED BEARING (a lag against the line-of-sight rate, a standing jitter, an acquisition kick), so
 the first shot at a new target misses a real hull ~18 % of the time (MEASURED, not derived) while a settled
@@ -644,7 +644,11 @@ determinism fixture (below), the admin session viewer, "watch a fight from anoth
   intro four-ship level since the 0-based renumbering; or pass a full name). Lands on the level with the **real ship idle**; a top bar
   shows a **Start recording** button that unlocks once the ship `.glb` has loaded (no placeholder capture).
   Start installs a fresh captured seed (`Date.now()>>>0`), `reset()`s the level, and captures one input
-  snapshot per sim tick. **Stop & Save** writes the trace and offers a **Play it ▶** link.
+  snapshot per sim tick. **Stop & Save** writes the trace and offers a **Play it ▶** link. **Known gap
+  (audit B5, open):** this dev recorder (`beginRecordCapture` / `stopRecordSession` in `main.js`) captures
+  loadout + components but **not skills**, so a `?record` made by an account with spent skill points plays
+  back on a skill-less ship and diverges; the live session recorder does capture skills. Fix planned as
+  Phase 5 of `docs/plans/2026-10-20-base-menu-state-and-drift-fixes.md`.
 - **Playback:** `/?playback&id={id}` (or `?playback` alone = the last recording). Loads the trace, rebuilds
   the recorded ship, re-seeds, and re-sims the fight; holds on the idle frame until the model loads, then
   plays. A top bar shows `tick / total` + Restart.
@@ -2028,8 +2032,8 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   share ONE gate: `canLaunch()` in shop.js is the only copy of the predicate (the server's `launchable` flag;
   false when a required slot — hull/armor, engine, thruster — is empty). `updateTakeoffGate` (shop.js) is the
   single writer that greys `#mw-go`/`#mw-takeoff`/`#mw-mission-nav`, and each launcher also checks
-  `canLaunch()` in its own click handler, so a forced click launches nothing. The Map's Take off **and**
-  Autopilot are greyed through `mountSystemNav`'s `autopilotDisabled` option. The reason shows **once**, in
+  `canLaunch()` in its own click handler, so a forced click launches nothing. The Map's Take off (its action's
+  `disabled`) **and** Autopilot (`mountSystemNav`'s `autopilotDisabled` option) are greyed too. The reason shows **once**, in
   `#mw-takeoff-note` under the launch bar (on Map, in the map's own hint); `#mw-launch` has
   `padding-bottom: 10px` so that note clears the floating `#xp-bar` by 4px. The in-flight overlay map and the
   arrival "Start mission?" prompt are not gated — the ship has already launched. DECISIONS §100.
@@ -2223,8 +2227,10 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   credits (`bankRun` POSTs `xp` to `/api/games`). **Curve** (`server/src/progression.js`): cost to reach
   level *n* = `1000 + 500·(n−1)` (cumulative 1000/2500/4500/7000/…); **level and unspent skill points are
   DERIVED from `experience`, never stored**; one point per level. The five **skills** (per invested point,
-  rates in `components.js` `SKILL_RATES` → `skillEffects()`, baked into the player at `buildPlayer`):
-  **Kinetic** +5% kinetic damage & +0.5° aim-assist cone · **Rocket** +5% rocket damage & +5% rocket speed ·
+  rates in `components.js` `SKILL_RATES` → `skillEffects()`, baked into the player by `makePlayer` in
+  `sim-core/ship-entity.js`, which `buildPlayer` calls): **Kinetic** +5% damage for every non-rocket weapon
+  (`kineticDmgMul` on each mounted weapon's `power` — kinetic, machine gun, cannon and beam alike; no aim
+  effect) · **Rocket** +5% rocket damage & +5% rocket speed ·
   **Shields** +5% shield capacity · **Maneuverability** +5% dodge chance · **Mobility** +5% engine+thruster
   power (→ acceleration & turn rate) & +5% to the player's flat 30 u/s top-speed cap (`PLAYER_MAX_SPEED ×
   maxSpeedMul` — the only thing that lifts it; the engine's catalog `maxSpeed` does not apply to the player).
@@ -2438,7 +2444,8 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   **Every way into the base menu** (Back to Hangar, Continue, the map's/dock's return to hangar, login,
   skipping the intro) goes through **`enterMenu()`** (`mainwindow.js`; `showMain` and `showWelcome` call it
   first), which stops the fight (`G.gameStarted`/`G.roam`/`G.returnToBase` false, no mission zone, no
-  autopilot, unpaused, overlay + out-of-bounds banner hidden, `body.menu`). Nothing ticks behind a menu, even
+  autopilot, unpaused, overlay + out-of-bounds banner hidden, `body.menu`) and then runs any ship rebuild
+  that was deferred while flying (`flushActiveShipRebuild`, DECISIONS §163). Nothing ticks behind a menu, even
   after a Loadout change rebuilds an alive ship. Launchers (`launchCampaign`, `launchMission`, `enterRoam`,
   Welcome's Take off) tear the menu down through its mirror **`leaveMenu()`**. DECISIONS §162; guarded by
   `53-base-menu-idle`.
@@ -2562,9 +2569,10 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   a **Shop** button (Slice C — see the Main Window section above). The **stash** (owned-but-not-equipped
   inventory, a qty model) surfaces **per-slot** as the fitting replacements. The **Shop panel** lists items
   by **type** (**Hull / Engine / Thrusters / Repair / Shield / Weapon / Grab**). The Shop lists only
-  **buyable** items (`price > 0` **and** `stats.buyable !== false` **and** every gate the row carries is
-  open — `stats.minLevel` in `activeShip.reachedLevels`, `stats.minMission` in `activeShip.clearedMissions`
-  — one predicate, `buyableNow()` in `shop.js`); **enemy parts are priced
+  **buyable** items (`isShopItem` — `price > 0` **and** `stats.buyable !== false`, the same predicate the
+  server's `/buy` enforces — **and** every gate the row carries is open — `stats.minLevel` in
+  `activeShip.reachedLevels`, `stats.minMission` in `activeShip.clearedMissions` — together `buyableNow()` in
+  `shop.js`); **enemy parts are priced
   (resale value) but flagged `buyable:false` → hidden**, while
   the player's **starter gear is cheap-but-buyable** (Basic hull 300 / engine 500 / thrusters 400 / repair
   drone 500 / homing rocket 600) so each type's ladder starts low. The **Grab** tab sells the **Advanced grab**
@@ -3810,7 +3818,10 @@ first translation). See DECISIONS §10.
   analytics) — admin shows a ✓/✗ match; no old-engine restoration. **Ops prerequisite:** the server IAM key
   needs `s3:PutObject`+`s3:GetObject` on `recordings/sessions/*` and `ASSETS_BUCKET` (+ region) in the server
   `.env`, else uploads no-op and playback 404s — plus **`s3:DeleteObject`** on the same prefix for
-  `reset.js --all` (without it a prod `--all` aborts before truncating; see Player-data reset).
+  `reset.js --all` (without it a prod `--all` aborts before truncating; see Player-data reset). **Granted**
+  (2026-10-23): the server key's IAM user `vega-sentinels-mailer` carries the inline policy
+  `VegaSentinelsSessionsS3` = Put/Get/Delete on `arn:aws:s3:::vega-sentinels-assets/recordings/sessions/*`
+  only (IAM simulation: allowed there, denied for `recordings/level0-intro.*` and `assets/*`).
 - **Admin dashboard (`GET /admin`, `server/src/admin.js`):** a private, **server-rendered** HTML page
   listing every player (id short, username, email, email_verified, created_at, last_seen,
   **progress**, credits, games_played, referrer, **device**) plus per-player aggregates from `games`
@@ -4728,9 +4739,11 @@ a flag on a World nobody steps: the station could not be clicked, drops could no
 winning requires docking under an engaged station autopilot, **no mission was completable**.
 
 **A room flies the player's REAL ship**, read from the account server-side by the ticket's `playerId` —
-loadout, components, skills, and the account record itself (`world.activeShip`), which the simulation reads
-to decide whether the last-kill reward drop should appear at all: without it a room offered a reward the
-player already owned. It used to build the catalog default for everyone, so a netsim run
+loadout, components and skills (`server/src/netsim/socket.js`). **Known gap (audit B6, open):** the socket
+does NOT pass the account record itself, so `createSimWorld` (`sim-host.js`) leaves `world.activeShip`
+null, `ownsReward` is always false in a room, and the last-kill reward crate drops even when the player
+already owns it (the browser's own world gets it right). Fix planned as Phase 5 of
+`docs/plans/2026-10-20-base-menu-state-and-drift-fixes.md`. It used to build the catalog default for everyone, so a netsim run
 ignored everything the player owned. Reading it from the DB rather than from the client also means a client
 cannot claim a better ship than it has.
 

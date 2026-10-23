@@ -51,6 +51,8 @@ Run from the `server/` directory.
   (the image's `WORKDIR` is `/app/server`; `app` is the compose service.) **Never** use `--no-s3` against
   prod (not even through an SSH tunnel — it looks like localhost): it would orphan every session trace.
 - If `--all` reports failed S3 deletes it has truncated **nothing** — fix S3 access (the IAM key needs
-  `s3:DeleteObject` on `recordings/sessions/*`) and re-run; deletes are idempotent.
+  `s3:DeleteObject` on `recordings/sessions/*`; granted 2026-10-23 to IAM user `vega-sentinels-mailer` via
+  the inline policy `VegaSentinelsSessionsS3`, so a failure means that policy or the key changed) and re-run;
+  deletes are idempotent.
 - To find a player's id, ask the user or look it up in the local db
   (`psql spacegame -c 'SELECT id FROM players'`).

@@ -1,6 +1,9 @@
 # Base-menu state leak + the drifted-copy bugs from the duplication audit
 
-**Status:** Phases 1-3 done (`8f9e705`, `2026-10-20-1816-launch-gate`, `2026-10-22-1334-loadout-skill-stats`); 4-5 planned. **Date:** 2026-10-20.
+**Status:** Phases 1–4 shipped — 1 `8f9e705` (`2026-10-20-1659-base-menu-idle`, DECISIONS §162), 2 `ca754bd`
+(`2026-10-20-1816-launch-gate`), 3 `6d0fc57` (`2026-10-22-1334-loadout-skill-stats`, §163), 4 `384e083`
+(`2026-10-22-1953-catalog-economy-guards`, §164, §165). **Phase 5 (B5, B6) pending** — anchors re-verified
+2026-10-23. **Date:** 2026-10-20.
 **Source:** a live bug report (below) plus the drifted findings of
 [`2026-10-20-duplication-audit.md`](2026-10-20-duplication-audit.md) (ids A1–A6, B1, B2, B5, B6 refer to it).
 **Execute** phase by phase; each phase is independently shippable and has its own guard. Offer
@@ -319,24 +322,29 @@ restated at `db.js:114`, `:120` (column defaults), `:498` (`registerPlayer` retu
 
 ## Phase 5 — Replay / netsim drift (audit B5, B6)
 
+**Status:** pending. Anchors below re-checked against `main` on 2026-10-23 (after Phases 1–4) and updated
+where the lines had moved; the code shape is unchanged (skills still not captured by `?record`; `activeShip`
+still not passed by the socket).
+
 ### B5 — `?record` drops skills
 
-`beginRecordCapture` (`client/src/main.js:1792-1809`) captures loadout + components but no skills, and
-`stopRecordSession` (`:1813-1817`) passes none to `makeTrace`; the live recorder does pass them
-(`:1849`, `:1855`). A `?record` made by an account with skill points plays back on a skill-less ship.
+`beginRecordCapture` (`client/src/main.js:1789-1806`; `recLoadout`/`recComponents` at `:1798-1799`, module
+lets at `:197-198`) captures loadout + components but no skills, and `stopRecordSession` (`:1809-1814`,
+`makeTrace` call `:1813-1814`) passes none to `makeTrace`; the live recorder does pass them (`:1846`, `:1852`). A `?record` made by an account with skill points plays back on a skill-less ship.
 
 1. Capture `recSkills = activeMatches && G.activeShip.progression ? G.activeShip.progression.skills : null`
-   next to `recLoadout` and pass `skills: recSkills` into `makeTrace`. Check `makeTrace` already accepts
-   `skills` (the live path uses it) and the playback path reads `trace.skills` (`main.js:1914`).
+   next to `recLoadout` and pass `skills: recSkills` into `makeTrace`. `makeTrace` already accepts
+   `skills` (`client/src/replay.js:184`, written at `:199`) and the playback path reads `trace.skills`
+   (`main.js:1911`) — verified 2026-10-23. Add a `let recSkills = null;` beside `:197-198`.
 2. Guard: a node test on the pure trace seam (`client/src/replay.js` / its test) that a trace made with
    skills round-trips them; if the capture is DOM-bound, extract the "what was flown" record into a pure
    helper and test that.
 
 ### B6 — the netsim room never knows what the player owns
 
-`server/src/netsim/socket.js:150-156` builds `ship = { shipId, loadout, components, skills }` but no
-`activeShip`; `createSimWorld` (`server/src/sim-host.js:115+`) sets `world.activeShip = ship.activeShip ||
-null`, so `ownsReward` (`client/src/sim-core/drops-sim.js:18`) is always false in a room and the last-kill
+`server/src/netsim/socket.js:150-157` (the object literal at `:155-156`) builds `ship = { shipId, loadout,
+components, skills }` but no `activeShip`; `createSimWorld` (`server/src/sim-host.js:115+`, the assignment at
+`:138`) sets `world.activeShip = ship.activeShip || null`, so `ownsReward` (`client/src/sim-core/drops-sim.js:18`) is always false in a room and the last-kill
 reward crate drops even when the player owns it.
 
 1. Add `activeShip: active` to that object.
