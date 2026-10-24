@@ -16,7 +16,7 @@ CLAUDE.md). Line numbers below are as of 2026-10-20 and have drifted — re-read
 Fixed-by index: A1 + A4 → `7807850` (merge `ca754bd`, `2026-10-20-1816-launch-gate`); A6 menu part →
 `f9a88ad` (merge `8f9e705`, `2026-10-20-1659-base-menu-idle`, DECISIONS §162); A3 + A5 → `74751f4` (merge
 `6d0fc57`, `2026-10-22-1334-loadout-skill-stats`, §163); A2 + B1 + B2 → `0fb8416` (merge `384e083`,
-`2026-10-22-1953-catalog-economy-guards`, §164, §165); B5 (`?record` skills part) + B6 → hash TBD
+`2026-10-22-1953-catalog-economy-guards`, §164, §165); B5 (`?record` skills part) + B6 → `20e9176` (§166)
 (`2026-10-23-1823-record-skills-netsim-ship`, §166).
 
 **Why this exists.** "Take off" sat at a different horizontal spot on each base-menu stage (720 / 671 / 635
