@@ -33,11 +33,17 @@ export const DROP_HALO_SIZE   = 4.5;      // soft rarity-color glow behind a nor
 // NOTHING to the stash; a normal loot drop deposits its item. This is the load-bearing no-dupe guarantee.
 export function shouldDeposit(drop) { return !!drop && !drop.special; }
 
-// Pure ownership gate: does the player's active-ship record already carry this reward? A weapon reward is
-// owned if any mount references it; a component reward (the L2 repair drone) is owned if the repair slot is
-// filled. Takes the active ship explicitly (drops.js passes G.activeShip) so it's THREE-free + node-testable.
+// Pure ownership gate: does the player already have this reward, EQUIPPED or IN THE STASH (DECISIONS §166)?
+// Stash: exactly this item ({kind, refId}) in `activeShip.stashRefs` (getActivePlayerShip lists rows with
+// qty > 0 only, so selling the last copy frees it). Equipped: a weapon reward is owned if any mount references
+// it; a component reward (the L2 repair drone) is owned if the repair slot is filled (any repair component).
+// Takes the active ship explicitly (drops.js passes G.activeShip; a netsim room passes the account record) so
+// it's THREE-free + node-testable.
 export function rewardOwned(activeShip, reward) {
   const as = activeShip; if (!as || !reward) return false;
+  // In the stash counts as owned: exactly this item, any qty > 0 (the server lists only those, so a sold-out
+  // row is simply absent). Records without stashRefs (old in-memory state, fixtures) fall through.
+  if ((as.stashRefs || []).some((s) => s.kind === reward.kind && s.refId === reward.refId)) return true;
   if (reward.kind === 'weapon') {
     const mounts = (as.loadout && as.loadout.mounts) || (as.ship && as.ship.stats && as.ship.stats.mounts) || [];
     return mounts.some((m) => m.weapon === reward.refId);

@@ -3,6 +3,21 @@
 > Change log, newest on top. Append-only (we don't edit history).
 > Current state is in [SUMMARY.md](SUMMARY.md).
 
+## 2026-10-24
+
+- **Drift-fix Phase 5: `?record` keeps skills, rooms know what you own, a stashed reward counts as owned**
+  `[2026-10-23-1823-record-skills-netsim-ship]`. (B5) Both recorders — the dev `?record` and the live
+  session recorder — now take the flown ship from one pure helper, `flownBuild()` (`client/src/replay.js`),
+  so a `?record` by an account with spent skill points records them and plays back on the same ship; live
+  traces are unchanged. (B6) A netsim room is handed the account record (`socket.js` → `ship.activeShip`),
+  so the L1/L2 last-kill reward crate no longer drops in a room for a player who owns the reward.
+  `getActivePlayerShip` returns `stashRefs` (`[{kind, refId}]`, `qty > 0`), and `rewardOwned` counts the
+  exact reward in the stash as owned (DECISIONS §166): unequipping the Machine Gun / Repair drone into the
+  stash no longer brings the crate back; selling it does. `depositLoot` re-reads `/active-ship` after a
+  successful victory deposit and copies only `stashRefs` (`refreshAfterRoomBank` too, best-effort). Tests:
+  `rewardOwned` stash cases, `flownBuild` round-trip, the room receives the account record, a headless
+  last-kill test (`server/src/reward-drop.test.js`), and `/active-ship` lists/drops stash refs.
+
 ## 2026-10-23
 
 - **Ops: the server key may now delete session traces** (AWS IAM). IAM user `vega-sentinels-mailer` (the

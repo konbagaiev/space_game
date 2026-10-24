@@ -1116,6 +1116,19 @@ test('shop: sell honors a quantity, clamps to what is owned, and rejects a bad q
   assert.equal((await post('/api/players/sell-qty/sell', { kind: 'component', refId: 2, qty: 0 })).status, 400);
 });
 
+// The account record carries the stash as bare refs: rewardOwned reads them (a stashed reward counts as owned,
+// DECISIONS §166), and both hosts (browser World + netsim room) get them from this one read.
+test('active-ship lists stash refs; a sold-out row drops off', async () => {
+  await clearCampaign('stash-refs');
+  await post('/api/players/stash-refs/loot', { items: [{ kind: 'component', refId: 2 }] });
+  const a = await getJson('/api/players/stash-refs/active-ship');
+  assert.ok(Array.isArray(a.stashRefs));
+  assert.ok(a.stashRefs.some((s) => s.kind === 'component' && s.refId === 2), 'the looted Light hull is listed');
+  assert.ok(a.stashRefs.every((s) => typeof s.refId === 'number'), 'refIds are numbers (rewardOwned compares with ===)');
+  const sold = await (await post('/api/players/stash-refs/sell', { kind: 'component', refId: 2 })).json();
+  assert.ok(!sold.activeShip.stashRefs.some((s) => s.kind === 'component' && s.refId === 2), 'sold → no longer listed');
+});
+
 // ---------- Level-gated shop rows (catalog_seed.js FACTORY_GATE = 'level-4') ----------
 // The "Level 3" reward tier — Heavy hull (13), Heavy Machine Gun (7), Triple spiral rocket (11) — is only
 // on sale once the campaign has cleared the weapons factory. The gate is the SERVER's, not the shop list's.

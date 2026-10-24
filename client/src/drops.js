@@ -235,7 +235,7 @@ export function warmDropAssets() {
 // its BODY: `special` drops are GREEN + haloed, cloned instantly from the warm cache (preloadRewardModel),
 // or shown as a green fallback box that the model replaces on arrival — see buildRewardObj below.
 
-// Ownership gate off G.activeShip: has the player already got this reward? Delegates to the pure
+// Ownership gate off G.activeShip: has the player already got this reward (equipped or in the stash)? Delegates to the pure
 // rewardOwned() (drops-config.js) so the logic stays node-testable; here we just supply G.activeShip.
 export function ownsReward(reward) { return rewardOwned(G.activeShip, reward); }
 

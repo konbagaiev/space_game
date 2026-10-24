@@ -4,8 +4,8 @@
 [`2026-10-20-base-menu-state-and-drift-fixes.md`](2026-10-20-base-menu-state-and-drift-fixes.md) shipped and
 fixed **A1, A2, A3, A4, A5, B1, B2** and the menu entry/exit part of **A6** (plus §0 and the base-menu state
 leak found the same day). **Still open:**
-- **Planned (Phase 5 of that plan):** **B5** (`?record` drops skills), **B6** (netsim room never passes
-  `activeShip`).
+- **B5 remainder:** the five-place `resolvePlayerBuild` consolidation (the `?record` skills part was fixed
+  2026-10-24 by Phase 5). **B6** fixed 2026-10-24.
 - **A6 remainder:** the staged text reveal is written twice; Welcome's Take off still launches straight
   into the fight (kept deliberately).
 - **Not planned yet:** A7, A8, A9, B3, B4, C1–C17.
@@ -16,7 +16,8 @@ CLAUDE.md). Line numbers below are as of 2026-10-20 and have drifted — re-read
 Fixed-by index: A1 + A4 → `7807850` (merge `ca754bd`, `2026-10-20-1816-launch-gate`); A6 menu part →
 `f9a88ad` (merge `8f9e705`, `2026-10-20-1659-base-menu-idle`, DECISIONS §162); A3 + A5 → `74751f4` (merge
 `6d0fc57`, `2026-10-22-1334-loadout-skill-stats`, §163); A2 + B1 + B2 → `0fb8416` (merge `384e083`,
-`2026-10-22-1953-catalog-economy-guards`, §164, §165).
+`2026-10-22-1953-catalog-economy-guards`, §164, §165); B5 (`?record` skills part) + B6 → hash TBD
+(`2026-10-23-1823-record-skills-netsim-ship`, §166).
 
 **Why this exists.** "Take off" sat at a different horizontal spot on each base-menu stage (720 / 671 / 635
 px at 1440 wide on Character / Missions / Loadout) because it lived inside a column whose width is restated
@@ -69,8 +70,8 @@ Sizes: **S** ≤ ½ day, **M** ~1–2 days, **L** more.
 | B2 | `gameplay_sessions` missing from `--all` reset; new-player defaults ×3 | **fixed 2026-10-22** (`0fb8416`, §165) | ops | S |
 | B3 | Server `buildShip` matches by an id seed ships don't have | latent | server authority | S–M |
 | B4 | Dev fight flags applied in 5 places, already diverged | drifted | dev / netsim | M |
-| B5 | "Effective player build" in 5 places; `?record` drops skills | drifted — **open**, Phase 5 planned | replay | M |
-| B6 | Server room never passes `activeShip` → reward crate always drops | drifted — **open**, Phase 5 planned | netsim | S |
+| B5 | "Effective player build" in 5 places; `?record` drops skills | `?record` part **fixed 2026-10-24** (§166); `resolvePlayerBuild` consolidation open | replay | M |
+| B6 | Server room never passes `activeShip` → reward crate always drops | **fixed 2026-10-24** (§166) | netsim | S |
 | C1 | Skill list ×7 | sync risk | — | M |
 | C2 | Slot lists + weapon-group map, client vs server | sync risk | — | S |
 | C3 | Sell rate ×3, test checks a literal | sync risk | — | S |
@@ -250,8 +251,9 @@ grant on `recordings/sessions/*` was added 2026-10-23.
   `applyFightSpec(descriptor, spec)` in sim-core used at all four sites; socket + `trace.room` carry it.
 
 ### B5. "Effective player build" in five places; `?record` drops skills — drifted (replay)
-**Open** — the `?record` skills part is Phase 5 of the drift-fix plan; the five-places consolidation
-(`resolvePlayerBuild`) is not planned. The `main.js` lines below have moved (`beginRecordCapture` is now
+**`?record` part fixed 2026-10-24** — [`2026-10-23-1823-record-skills-netsim-ship.md`](2026-10-23-1823-record-skills-netsim-ship.md): both recorders call the pure
+`flownBuild()` (`replay.js`), skills included. The five-places consolidation (`resolvePlayerBuild`) stays
+**open**, not planned. The `main.js` lines below have moved (`beginRecordCapture` is now
 `:1789-1806`, `stopRecordSession` `:1809-1814`, live recorder skills `:1846`/`:1852`, playback `:1911`).
 - `client/src/ship-build.js:49-63` (beam + duel overrides); `main.js:1797-1802` (`?record` captures
   loadout/components, **no skills**; `stopRecordSession` `:1815-1816` passes none to `makeTrace`);
@@ -263,7 +265,8 @@ grant on `recordings/sessions/*` was added 2026-10-23.
   output; move `DUEL_LOADOUT`/`DUEL_COMPONENTS` into `sim-core/duel-config.js`.
 
 ### B6. Server room never passes `activeShip` — drifted (netsim)
-**Open** — Phase 5 of the drift-fix plan (anchor still valid: `socket.js:155-156`).
+**Fixed 2026-10-24** — [`2026-10-23-1823-record-skills-netsim-ship.md`](2026-10-23-1823-record-skills-netsim-ship.md): the socket passes the account record as `ship.activeShip`
+(and a stashed reward now counts as owned, DECISIONS §166).
 - `server/src/netsim/socket.js:155` → `createSimWorld` gets no `activeShip`, so `ownsReward` is always
   false in a room: the last-kill reward crate drops even when the player owns it. The browser differs.
 - Fix: pass the account's active-ship record.

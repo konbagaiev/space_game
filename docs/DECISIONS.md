@@ -7032,3 +7032,30 @@ explicit, commented keep-list), and does not touch S3. Alongside, `NEW_PLAYER_DE
 one source of a new player's starting values for the register INSERT (now explicit — prod's column defaults
 never move, since `ADD COLUMN IF NOT EXISTS … DEFAULT` is a no-op on an existing table), its response, the
 reset UPDATE and the fresh-DB DDL defaults.
+
+## 166. A reward in the stash is owned
+
+**Date:** 2026-10-24. **Context:** drift-fix Phase 5
+([`2026-10-23-1823-record-skills-netsim-ship.md`](plans/2026-10-23-1823-record-skills-netsim-ship.md)).
+`rewardOwned` looked only at what was equipped, so moving the Machine Gun (or the Repair drone) to the stash
+brought the L1 (or L2) last-kill reward crate back on the next clear.
+
+**Decision.** A reward is owned when it is **equipped** (unchanged: a weapon mount with `weapon === refId`;
+for a component reward, `components.repair` filled by *any* repair component) **or** when **exactly that
+item** (`{kind, refId}`) is in the stash with `qty > 0`. A stashed Repair drone II (19) does not count for
+the drone (12) — only the item the level rewards. Selling needs no special case: `/sell` decrements `qty`
+and the read lists only `qty > 0`, so selling the last copy frees it and the crate comes back.
+
+- **A field on the one account record, not a second copy.** Both hosts already hand `rewardOwned` the
+  `getActivePlayerShip` record — the browser's `G.activeShip` (every full assignment comes from
+  `/active-ship` or the shop-state `activeShip`) and a netsim room's `ship.activeShip` (`loadShip` *is*
+  `getActivePlayerShip`). So the stash travels as `stashRefs: [{kind, refId}]` on that record (one light
+  query, `getStashRefs`, not `getStash`'s per-row catalog lookups). A client-side stash mirror or a separate
+  `owned` set would be a second copy to keep in sync. The one stash change that did not refresh the record —
+  the victory loot deposit — now re-reads it and copies only `stashRefs`, so it cannot clobber a newer
+  loadout/progression.
+- **Not recorded in traces.** `?playback` / admin playback use the viewer's account and the server referee
+  passes none (every reward unowned). A reward drop that differs in playback does not matter (maintainer
+  call); the referee already compares credits/XP/kills, never the digest. No trace-format change,
+  `TRACE_VERSION` stays 4.
+- **The equipped half was left as "any repair".** Tightening it to an exact id was not asked for.

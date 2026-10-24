@@ -12,6 +12,7 @@ import http from 'node:http';
 import express from 'express';
 import { WebSocket } from 'ws';
 import { createTicketStore } from './tickets.js';
+import { createRoom } from './room.js';
 import { attachNetsim, makeEconomySink, WS_PATH, IDLE_TIMEOUT_MS } from './socket.js';
 
 let server, base, wsBase, tickets, netsim;
@@ -279,4 +280,44 @@ test('a failed bank is logged, never thrown into the room', async () => {
 
 test('no banker wired → no sink at all, and a room runs without one', () => {
   assert.equal(makeEconomySink({ playerId: 'p1', level: 'level-1', bankRun: null }), null);
+});
+
+// Audit B6: the room used to get the ship's loadout/skills but NOT the account record, so `ownsReward`
+// (equipped OR stashed reward → no last-kill crate, DECISIONS §166) was always false in a room. Its own
+// listener: it needs a `loadShip` stub and a spying room factory the shared server above must not carry.
+test('the room is handed the ACCOUNT record (ownsReward reads it)', async () => {
+  const REC = { ship: { id: 1 }, stashRefs: [{ kind: 'weapon', refId: 5 }] };
+  const seen = [];
+  const spy = (args) => { seen.push(args); return createRoom(args); };
+  const app = express();
+  app.use(express.json());
+  const tix = createTicketStore();
+  app.post('/api/ws-ticket', (req, res) => res.json(tix.issue(String(req.body.playerId))));
+  const srv = http.createServer(app);
+  await new Promise((r) => srv.listen(0, r));
+  const ns = attachNetsim(srv, { tickets: tix, pingEveryMs: 50, loadShip: async () => REC, createRoomFn: spy,
+    log: { warn: (m) => console.error(m), info: () => {}, log: () => {} } });
+  const port = srv.address().port;
+  const ticket = async () => (await (await fetch(`http://localhost:${port}/api/ws-ticket`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ playerId: 'p-own' }),
+  })).json()).ticket;
+  const open = (query) => new Promise((resolve, reject) => {
+    const ws = new WebSocket(`ws://localhost:${port}${WS_PATH}?${query}`);
+    ws.inbox = [];
+    ws.on('message', (data) => { ws.inbox.push(JSON.parse(data)); ws.emit('inbox'); });
+    ws.once('open', () => resolve(ws));
+    ws.once('error', reject);
+  });
+  try {
+    const a = await open(`ticket=${await ticket()}&level=level-1`);
+    await waitFor(a, (m) => m.type === 'welcome');
+    assert.equal(seen.length, 1);
+    assert.equal(seen[0].ship.activeShip, REC, 'the campaign room gets the account record itself');
+    a.close();
+    const b = await open(`ticket=${await ticket()}&brawl=2`);
+    await waitFor(b, (m) => m.type === 'welcome');
+    assert.equal(seen.length, 2);
+    assert.equal(seen[1].ship.activeShip, undefined, 'a brawl room skips the account read');
+    b.close();
+  } finally { ns.closeAll(); srv.close(); }
 });

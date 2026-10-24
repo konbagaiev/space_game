@@ -44,7 +44,7 @@ import {
   brawlInputAllowed, brawlNetSnapshot, brawlLinkLost, brawlLinkClosed,
 } from './brawl-host.js'; // ?brawl: setup panel, run, spectator camera, result card
 import { duelAnchorReached } from './sim-core/duel-config.js'; // the instant a duel's FIGHT ended — the referee's comparison point
-import { evalRecord, evalPlayback, normalizeLevelName, traceLevelName, snapshotInput, makeTrace, validateTrace, makeReplaySession, stepReplayTick, hydrateTrace, traceTickCount } from './replay.js'; // ?record/?playback input-replay core (docs/plans/2026-07-09-replay-record.md)
+import { evalRecord, evalPlayback, normalizeLevelName, traceLevelName, snapshotInput, makeTrace, flownBuild, validateTrace, makeReplaySession, stepReplayTick, hydrateTrace, traceTickCount } from './replay.js'; // ?record/?playback input-replay core (docs/plans/2026-07-09-replay-record.md)
 import { makeSessionRecorder } from './session-record.js'; // always-on live-session recorder (funnel analytics)
 import { makeIntroDirector } from './intro-director.js'; // the scripted Level-0 intro (the script is data on the descriptor)
 import { HITBOXES_DEBUG, syncHitBoxes } from './hitboxes-debug.js'; // dev-only ?hitboxes wireframe hitbox overlay
@@ -193,9 +193,7 @@ const ROAM = typeof location !== 'undefined' && location.search.includes('roam')
 let introMode = false;        // the Level-0 intro is being ENDED by Skip (finishIntro's own guard: advance 0→1 + Level-1 briefing)
 if (REC || rs.play) G.replayMode = true; // dev record/playback sessions are READ-ONLY: the sim must not advance progress / bank credits / deposit loot on a (re)played win
 let recSeed = 0;              // mulberry32 seed installed at record start (captured into the trace)
-let recShipId = null;         // the player ship id used for the recording (rebuilt on playback)
-let recLoadout = null;        // the player loadout at record time (weapons/mounts) — makes the trace account-independent
-let recComponents = null;     // the player components at record time (hull/engine/…)
+let recBuild = null;          // flownBuild() at record start: { shipId, loadout, components, skills } — rebuilt on playback
 let recCapturing = false;     // true while capturing input (set by startRecordSession)
 const recTicks = [];          // captured per-tick input snapshots for the current recording
 let replayAcc = 0;            // real-time accumulator (s) driving the fixed-timestep record/playback loop
@@ -1790,13 +1788,8 @@ function beginRecordCapture() {
   if (recCapturing) return;
   recSeed = (Date.now() >>> 0);                 // the one wall-clock touch — captured into the trace (determinism preserved)
   seedSim(recSeed);                              // install the sim's seeded stream (gameplay draws only)
-  recShipId = (CATALOG.shipByName.get(G.currentShipName) || {}).id ?? 1;
-  // Capture the loadout/components actually used, so the trace reproduces this exact ship independent of the
-  // account later. Only when the built ship IS the active ship (else the bootstrap used the ship's defaults →
-  // leave null so playback falls back to catalog defaults too).
-  const activeMatches = G.activeShip && G.activeShip.ship && G.activeShip.ship.name === G.currentShipName;
-  recLoadout = activeMatches ? G.activeShip.loadout : null;
-  recComponents = activeMatches ? G.activeShip.components : null;
+  // The ship actually flown (loadout/components AND skills), via the one helper the live recorder shares.
+  recBuild = flownBuild({ activeShip: G.activeShip, shipName: G.currentShipName, shipByName: CATALOG.shipByName });
   G.gameStarted = true;
   replayAcc = 0;
   reset();                                        // position the player + start REC.level from tick 0 (seeded)
@@ -1810,8 +1803,7 @@ function stopRecordSession() {
   if (!recCapturing) return;
   recCapturing = false;
   const id = `${REC.level}-${recSeed.toString(36)}`;
-  const trace = makeTrace({ id, level: REC.level, seed: recSeed, dt: BENCH_DT, shipId: recShipId,
-    loadout: recLoadout, components: recComponents, ticks: recTicks });
+  const trace = makeTrace({ id, level: REC.level, seed: recSeed, dt: BENCH_DT, ...recBuild, ticks: recTicks });
   try { localStorage.setItem(`replay:${id}`, JSON.stringify(trace)); localStorage.setItem('replay:last', JSON.stringify(trace)); } catch {}
   downloadTrace(trace, `${id}.json`);
   showRecordDone(id, traceTickCount(trace));   // v2 traces carry packed runs, not a flat ticks array
@@ -1833,22 +1825,16 @@ export function beginLiveSession() {
   flushSession('quit');
   const seed = (Date.now() >>> 0);
   seedSim(seed); // install the seeded gameplay stream for THIS session
-  const shipId = (CATALOG.shipByName.get(G.currentShipName) || {}).id ?? 1;
-  const activeMatches = G.activeShip && G.activeShip.ship && G.activeShip.ship.name === G.currentShipName;
   // THE SHIP THAT WAS ACTUALLY FLOWN, not the one the account has parked. Under ?duel the player flies
   // `duelBuild`'s forced starter kit, so recording the account's gear would tell a re-simulation to rebuild
   // the wrong ship and the fight diverges on tick one: a dev flag that changes the SHIP has to change what
   // the recording says the ship was, or the recording is of a fight nobody fought. `duelBuild` is a strict
   // no-op with the flag off — the same object comes back out. (`?beam`'s beamLoadout has the same hole; it
   // is named as known in SUMMARY rather than fixed here.)
-  const built = duelBuild({
-    // The allocation this run is actually being played with — the ship the replay has to rebuild.
-    skills: (activeMatches && G.activeShip.progression) ? G.activeShip.progression.skills : null,
-    loadout: activeMatches ? G.activeShip.loadout : null,
-    components: activeMatches ? G.activeShip.components : null,
-  });
+  // `flownBuild` (replay.js) is the one shared copy of the "is the built ship the active ship" check.
+  const built = duelBuild(flownBuild({ activeShip: G.activeShip, shipName: G.currentShipName, shipByName: CATALOG.shipByName }));
   sr.begin({
-    seed, level: CATALOG.levelName || 'level-0', shipId,   // the SEED NAME (level-N), stashed at each CATALOG.level set (C2a)
+    seed, level: CATALOG.levelName || 'level-0', shipId: built.shipId,   // the SEED NAME (level-N), stashed at each CATALOG.level set (C2a)
     skills: built.skills, loadout: built.loadout, components: built.components,
     // The ROOM, when this is not the plain level — the one parameter that defines a duel, carried on the
     // trace so the referee can rebuild it (docs/plans/2026-09-01-1845-duel-referee.md).

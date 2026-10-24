@@ -1040,6 +1040,13 @@ async function withTx(fn) {
   finally { client.release(); }
 }
 
+// What the player holds in the stash, as bare refs — the ownership half the sim reads (rewardOwned,
+// DECISIONS §166). Cheap on purpose: getActivePlayerShip runs on every shop mutation and room join.
+async function getStashRefs(playerId) {
+  const { rows } = await pool.query('SELECT kind, ref_id FROM stash WHERE player_id = $1 AND qty > 0 ORDER BY kind, ref_id', [playerId]);
+  return rows.map((r) => ({ kind: r.kind, refId: Number(r.ref_id) }));
+}
+
 export async function getStash(playerId) {
   await registerPlayer(playerId);
   const { rows } = await pool.query('SELECT kind, ref_id, qty FROM stash WHERE player_id = $1 AND qty > 0 ORDER BY kind, ref_id', [playerId]);
@@ -1336,17 +1343,19 @@ export async function getActivePlayerShip(playerId) {
   const stats = row.stats, loadout = row.loadout || {};
   const components = row.ps_components ?? row.ship_components ?? {};
   const missingRequired = [...REQUIRED_SLOTS].filter((s) => components[s] == null);
-  const [progression, sideMissionsUnlocked, levelsReached, clearedMissions] = await Promise.all([
+  const [progression, sideMissionsUnlocked, levelsReached, clearedMissions, stashRefs] = await Promise.all([
     getProgression(playerId),                                     // banked XP → derived level + skill points + allocations
     reachedLevel(reg.currentProgress, SIDE_MISSIONS_MIN_LEVEL),   // side-mission board gate (DECISIONS §91/§95)
     reachedLevels(reg.currentProgress),                           // level NAMES reached → the client's `minLevel` shop filter
     getClearedMissions(playerId),                                 // cleared side-mission ids → the client's `minMission` shop filter
+    getStashRefs(playerId),                                       // stash rows (qty > 0) as bare refs → rewardOwned
   ]);
   return {
     playerShipId: Number(row.player_ship_id),
     ship: { id: Number(row.ship_id), name: row.name, type: row.type, stats, modelUrl: row.model_url, modelUrlHigh: row.model_url_high, components: row.ship_components },
     loadout: { mounts: loadout.mounts ?? stats.mounts ?? [] },
     components,
+    stashRefs, // [{ kind, refId }] for stash rows with qty > 0 — a stashed reward counts as owned (DECISIONS §166)
     progression, // { experience, level, xpIntoLevel, xpForNextLevel, skillPoints, skills{kinetic,...} }
     language: reg.language, // the player's stored language preference (client adopts it if unset locally)
     credits: reg.credits,   // the player's persistent credit balance

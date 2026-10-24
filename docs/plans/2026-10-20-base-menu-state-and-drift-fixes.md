@@ -2,8 +2,8 @@
 
 **Status:** Phases 1–4 shipped — 1 `8f9e705` (`2026-10-20-1659-base-menu-idle`, DECISIONS §162), 2 `ca754bd`
 (`2026-10-20-1816-launch-gate`), 3 `6d0fc57` (`2026-10-22-1334-loadout-skill-stats`, §163), 4 `384e083`
-(`2026-10-22-1953-catalog-economy-guards`, §164, §165). **Phase 5 (B5, B6) pending** — anchors re-verified
-2026-10-23. **Date:** 2026-10-20.
+(`2026-10-22-1953-catalog-economy-guards`, §164, §165). **Phase 5 (B5, B6) done 2026-10-24** — [`2026-10-23-1823-record-skills-netsim-ship.md`](2026-10-23-1823-record-skills-netsim-ship.md)
+(§166; scope extended: a reward in the stash counts as owned). **Date:** 2026-10-20.
 **Source:** a live bug report (below) plus the drifted findings of
 [`2026-10-20-duplication-audit.md`](2026-10-20-duplication-audit.md) (ids A1–A6, B1, B2, B5, B6 refer to it).
 **Execute** phase by phase; each phase is independently shippable and has its own guard. Offer
@@ -322,9 +322,10 @@ restated at `db.js:114`, `:120` (column defaults), `:498` (`registerPlayer` retu
 
 ## Phase 5 — Replay / netsim drift (audit B5, B6)
 
-**Status:** pending. Anchors below re-checked against `main` on 2026-10-23 (after Phases 1–4) and updated
-where the lines had moved; the code shape is unchanged (skills still not captured by `?record`; `activeShip`
-still not passed by the socket).
+**Status:** **Done 2026-10-24** — [`2026-10-23-1823-record-skills-netsim-ship.md`](2026-10-23-1823-record-skills-netsim-ship.md) (DECISIONS §166). Built as
+`flownBuild()` shared by both recorders (B5) and the socket passing the account record (B6); the scope was
+extended with a new rule, a reward in the stash counts as owned (`stashRefs` on the active-ship record). The
+anchors below are historical.
 
 ### B5 — `?record` drops skills
 
