@@ -10,6 +10,9 @@ leak found the same day). **Still open:**
   into the fight (kept deliberately).
 - **Not planned yet:** A7, A8, A9, B3, B4, C1–C17.
 
+**Close-out plan (2026-10-24):** every open item is scheduled in
+[`2026-10-24-duplication-audit-closeout.md`](2026-10-24-duplication-audit-closeout.md) (8 phases).
+
 Each open item is a candidate for its own change; pick them up one at a time (offer `/feature-pipeline` per
 CLAUDE.md). Line numbers below are as of 2026-10-20 and have drifted — re-read the code before acting.
 
