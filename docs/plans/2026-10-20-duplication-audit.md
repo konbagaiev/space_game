@@ -77,13 +77,13 @@ Sizes: **S** ≤ ½ day, **M** ~1–2 days, **L** more.
 | B4 | Dev fight flags applied in 5 places, already diverged | drifted | dev / netsim | M |
 | B5 | "Effective player build" in 5 places; `?record` drops skills | `?record` part **fixed 2026-10-24** (§166); `resolvePlayerBuild` consolidation open | replay | M |
 | B6 | Server room never passes `activeShip` → reward crate always drops | **fixed 2026-10-24** (§166) | netsim | S |
-| C1 | Skill list ×7 | **fixed 2026-10-24** (`<commit>`) | — | M |
-| C2 | Slot lists + weapon-group map, client vs server | **fixed 2026-10-24** (`<commit>`, §167) | — | S |
-| C3 | Sell rate ×3, test checks a literal | **fixed 2026-10-24** (`<commit>`) | — | S |
-| C4 | Client hand-rebuilds the progression object after a game | **fixed 2026-10-24** (`<commit>`) | — | S |
+| C1 | Skill list ×7 | **fixed 2026-10-24** (`6ad1a1a`) | — | M |
+| C2 | Slot lists + weapon-group map, client vs server | **fixed 2026-10-24** (`6ad1a1a`, §167) | — | S |
+| C3 | Sell rate ×3, test checks a literal | **fixed 2026-10-24** (`6ad1a1a`) | — | S |
+| C4 | Client hand-rebuilds the progression object after a game | **fixed 2026-10-24** (`6ad1a1a`) | — | S |
 | C5 | Level reward stated 3 times (drop / briefing grant / owned check) | sync risk | — | S–M |
 | C6 | Mission location "four-way invariant" only half tested | sync risk | — | S |
-| C7 | Shop-unlock triggers + hard-coded starter ids | **fixed 2026-10-24** (`<commit>`) | — | S |
+| C7 | Shop-unlock triggers + hard-coded starter ids | **fixed 2026-10-24** (`6ad1a1a`) | — | S |
 | C8 | Catalog flattening + DB row mappers duplicated | sync risk (one drifted) | — | M |
 | C9 | Per-tick warp/repair/shield logic copied per ship kind | drifted (minor) | replay risk | S–M |
 | C10 | Hit handling + death events copied ~8× | sync risk + latent crash | — | M |
@@ -280,7 +280,7 @@ grant on `recordings/sessions/*` was added 2026-10-23.
 
 ## C. Sync risks (still agree, kept in step by hand)
 
-### C1. Skill list ×7 (M) — **fixed 2026-10-24** (`<commit>`)
+### C1. Skill list ×7 (M) — **fixed 2026-10-24** (`6ad1a1a`)
 
 _Fixed by [`2026-10-24-1836-dedup-shared-contracts.md`](2026-10-24-1836-dedup-shared-contracts.md) (one list in `client/src/sim-core/skills.js`) — the evidence below is as of 2026-10-20._
 
@@ -290,7 +290,7 @@ _Fixed by [`2026-10-24-1836-dedup-shared-contracts.md`](2026-10-24-1836-dedup-sh
 Fix: `sim-core/skills.js` exporting `SKILLS`; server imports it; generate column adds + reset SQL; test
 every key has a `skillEffects` entry and both i18n keys.
 
-### C2. Slot lists + weapon-group map (S) — **fixed 2026-10-24** (`<commit>`)
+### C2. Slot lists + weapon-group map (S) — **fixed 2026-10-24** (`6ad1a1a`)
 
 _Fixed by [`2026-10-24-1836-dedup-shared-contracts.md`](2026-10-24-1836-dedup-shared-contracts.md) (slot lists in `sim-core/shop-rules.js`, `WEAPON_GROUP` derived from `GROUP_WEAPON_TYPE`, unknown type → 409, DECISIONS §167) — the evidence below is as of 2026-10-20._
 
@@ -299,7 +299,7 @@ Required/component slots `client/src/shop.js:29-30` (+ `:32-37`, `:146`, `:92`),
 vs `db.js:915` (`WEAPON_GROUP`). Unknown weapon type: server falls back to `'gun'` (`db.js:1057`), client
 to no slot. Fix: `db.js` imports `shop-slots.js` and derives `WEAPON_GROUP`; slot lists move there.
 
-### C3. Sell rate ×3 (S) — **fixed 2026-10-24** (`<commit>`)
+### C3. Sell rate ×3 (S) — **fixed 2026-10-24** (`6ad1a1a`)
 
 _Fixed by [`2026-10-24-1836-dedup-shared-contracts.md`](2026-10-24-1836-dedup-shared-contracts.md) (`SELL_RATE` / `sellPrice` in `sim-core/shop-rules.js`) — the evidence below is as of 2026-10-20._
 
@@ -307,7 +307,7 @@ _Fixed by [`2026-10-24-1836-dedup-shared-contracts.md`](2026-10-24-1836-dedup-sh
 `server/src/db.js:916` (`sellPrice`); `format.test.js:36` asserts the literal 0.75. Fix: server sends
 `sellPrice` per stash row (or one exported rate), delete client copies.
 
-### C4. Client rebuilds progression by hand (S) — **fixed 2026-10-24** (`<commit>`)
+### C4. Client rebuilds progression by hand (S) — **fixed 2026-10-24** (`6ad1a1a`)
 
 _Fixed by [`2026-10-24-1836-dedup-shared-contracts.md`](2026-10-24-1836-dedup-shared-contracts.md) (`POST /api/games` returns `progression`; Character bar uses `liveProgress`) — the evidence below is as of 2026-10-20._
 
@@ -331,7 +331,7 @@ it); `rewardOwned` resolves the slot from the catalog by `refId`.
 `system-map.test.js:317` checks anchors vs set-pieces only. Fix: `missions.js` imports `ANCHORS`, or a
 test that `objectForMission(m.id).pos` equals `m.descriptor.center` for every generated mission.
 
-### C7. Shop-unlock triggers and starter ids — partly intentional (§90/§95) (S) — **fixed 2026-10-24** (`<commit>`)
+### C7. Shop-unlock triggers and starter ids — partly intentional (§90/§95) (S) — **fixed 2026-10-24** (`6ad1a1a`)
 
 _Fixed by [`2026-10-24-1836-dedup-shared-contracts.md`](2026-10-24-1836-dedup-shared-contracts.md) (starter ids read from the starter ship row; the gates pinned by `shared-contracts.test.js`) — the evidence below is as of 2026-10-20._
 

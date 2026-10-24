@@ -36,7 +36,7 @@ in the audit rather than inventing work.
 
 ## Phase 1 — Shared contracts between client and server (C1, C2, C3, C4, C7)
 
-**Status:** done 2026-10-24 (`<commit>`), [plan](2026-10-24-1836-dedup-shared-contracts.md).
+**Status:** done 2026-10-24 (`6ad1a1a`, merge `a62aca8`, run 2026-10-24-1836-dedup-shared-contracts), [plan](2026-10-24-1836-dedup-shared-contracts.md).
 
 Size M. Pattern: DECISIONS §136 — one pure module under `client/src/` (`sim-core/` if the sim needs it), the
 server imports it; a test recomputes instead of asserting a literal.
