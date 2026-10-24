@@ -5,6 +5,29 @@
 
 ## 2026-10-24
 
+- **Ship ids are fixed in the seed; one catalog builder (duplication audit B3, C8)** — `[2026-10-24-1926-ship-ids-catalog-builder]`
+  ([plan](plans/2026-10-24-1926-ship-ids-catalog-builder.md), DECISIONS §168). Every `SHIPS` row in
+  `catalog_seed.js` now carries an explicit `id` **equal to production's** (Basic player ship 1, pirate gunner
+  132, advanced medium pirate 141, Basic pirate ship 368, basic rocket pirate 369, pirate mini boss 371, first
+  pirate boss 372, second pirate boss 374, advanced rocket pirate 375, pirate lancer 2329). The ships upsert keys
+  `ON CONFLICT (id)` (a rename updates in place), preceded by a new per-boot **`reconcileShipIds`** in `db.js`
+  that moves any database whose ids disagree onto the seed ids (park pattern, `player_ships` moved in lockstep
+  with `player_ships_ship_id_fkey` dropped and re-added, one transaction; a seed rename is NOT treated as a
+  mismatch), followed by `setval('ships_id_seq', MAX(id))`. The server's `buildShip` (netsim room,
+  `sim-replay.mjs`, verifiers) now really resolves `shipId` instead of always falling back to the first player
+  ship. Both hosts flatten the catalog through the new **`client/src/sim-core/catalog.js`** (`catalogFromRows`,
+  `shipById`, `emptyCatalog`) — the browser bootstrap and `sim-host.buildCatalog` no longer hand-write it — and
+  ships are **id-ordered on both**, so locally `enemyShips[0]` (the `?bench` cast, a freshly baked backdrop, a
+  role-less `spawnEnemy()`) is now pirate gunner. `db.js` has one column list + row mapper per catalog table,
+  shared by `/api/*` and `catalogItem`, so **stash rows now carry `id`/`rarity`/`color`/`modelUrl`/`modelUrlHigh`**
+  like catalog rows. No player-visible change. New guards: `server/src/ships_drift.test.js` (own DB
+  `spacegame_test_ships`), `server/src/sim-host.test.js`, `client/src/sim-core/catalog.test.js`, and a stash
+  field assertion in `server.test.js`. **Ops:** the reconcile runs at server start; it is a no-op on prod (ids
+  already match — no `[migrate] ships:` line is expected there; prod's sequence drops from its drifted 2929 to
+  2329). On a local `spacegame` it renumbers 2..9 and 1337 onto the prod ids on first boot and logs one
+  `[migrate] ships:` line. The closeout plan's "same as the other tables do" `setval` note was corrected — only
+  `levels` uses one.
+
 - **Shared client/server contracts (duplication audit C1, C2, C3, C4, C7)** — five facts that were written
   separately on the client and the server, kept in step by hand, now have one source each
   ([plan](plans/2026-10-24-1836-dedup-shared-contracts.md)). The **skill list** lives in

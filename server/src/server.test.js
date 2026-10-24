@@ -1046,6 +1046,13 @@ test('shop: unlocks on clearing the campaign and backfills the basic gun into th
   assert.equal(gun.qty, 1);
   assert.equal(gun.name, 'Basic kinetic');
   assert.equal(gun.price, 800); // priced (economy-shop-v2.md) — sells ~600 toward the Heavy hull
+  // a stash row carries the same catalog fields as the /api row it points at (one row mapper, audit C8)
+  assert.equal(gun.id, 1);
+  assert.ok('modelUrl' in gun && 'modelUrlHigh' in gun, 'stash row carries the model URLs');
+  const row = (await getJson('/api/weapons')).find((w) => w.id === 1);
+  const pick = (o) => ({ rarity: o.rarity, color: o.color, modelUrl: o.modelUrl, modelUrlHigh: o.modelUrlHigh });
+  assert.ok(gun.rarity && gun.color, 'stash row carries rarity + color');
+  assert.deepEqual(pick(gun), pick(row));
   // active ship is launchable (all required slots filled), with the Machine Gun equipped
   assert.equal(s.activeShip.launchable, true);
   assert.deepEqual(s.activeShip.missingRequired, []);

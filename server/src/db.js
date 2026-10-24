@@ -111,6 +111,72 @@ async function renumberLevelsZeroBased() {
   }
 }
 
+// Ship ids are EXPLICIT in the seed and equal production's (catalog_seed.js SHIPS, DECISIONS §168). Before
+// that, the name-keyed upsert let each database hand out its own sequence ids (prod 1/132/141/368…2329, a
+// local DB 1..9 + 1337, a fresh test DB 1..10), and the seed rows carried no id, so `buildShip` never matched.
+// This brings any database whose ship ids disagree with the seed onto the seed's ids. It runs on EVERY boot
+// (no migrations_pg entry) because worktrees share one local Postgres: a server on older code can insert a
+// new seed ship under a sequence id after this ran, and a one-shot would never look again. When nothing
+// disagrees it is one SELECT and returns without a transaction or a log line.
+//
+// A row is moved ("mismatched") when either:
+//   1. it carries a seed NAME under a different id (it must move to the seed id); or
+//   2. it sits on seed id X under another name AND some other row carries X's seed name (that row has to
+//      move INTO X, so the occupant must get out of the way).
+// A row on X whose name nobody else carries is a pure RENAME and is left alone: the `ON CONFLICT (id)`
+// upsert renames it in place, keeping its id and every player_ships row. (Evicting it unconditionally would
+// park the renamed row and insert a fresh X beside it, stranding player_ships on a frozen parked copy.)
+//
+// Same park pattern as renumberLevelsZeroBased: drop the FK, park every mismatched row (player_ships moving
+// in lockstep), assign each seed-named parked row its seed id, re-add the FK — one transaction. After
+// parking, a seed id X is held only by the row already named nameOf(X) or by a pure-rename row (which exists
+// only because no row carries nameOf(X)), so nothing ever moves into an occupied X. A parked row with NO seed
+// name stays parked: the enemy prune in migrate() deletes it if it's an enemy; a non-seed player row (none
+// exist) stays parked, owners and all, and is logged.
+export const SHIP_PARK = 1_000_000; // clear of every seed id (max 2329) and prod's drifted sequence (2929)
+export async function reconcileShipIds(SHIPS) {
+  const idOf = new Map(SHIPS.map((s) => [s.name, s.id]));
+  const nameOf = new Map(SHIPS.map((s) => [s.id, s.name]));
+  const { rows } = await pool.query('SELECT id, name FROM ships');
+  const all = rows.map((r) => ({ id: Number(r.id), name: r.name }));
+  const names = new Set(all.map((r) => r.name));
+  const bad = all.filter((r) =>
+    (idOf.has(r.name) && idOf.get(r.name) !== r.id)                  // seed name, wrong id → moves
+    || (nameOf.has(r.id) && nameOf.get(r.id) !== r.name              // on seed id X under another name…
+        && names.has(nameOf.get(r.id))));                            // …AND X's real owner exists elsewhere → evict
+  if (!bad.length) return { moved: [], parked: [] };
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('ALTER TABLE player_ships DROP CONSTRAINT IF EXISTS player_ships_ship_id_fkey');
+    const ids = bad.map((r) => r.id);
+    // Parking `id + SHIP_PARK` can collide with a row an EARLIER boot left parked (a non-seed player row).
+    // That is a PK error → ROLLBACK → the boot fails loudly, which is right for a state no known DB has.
+    await client.query('UPDATE ships SET id = id + $1 WHERE id = ANY($2::bigint[])', [SHIP_PARK, ids]);
+    await client.query('UPDATE player_ships SET ship_id = ship_id + $1 WHERE ship_id = ANY($2::bigint[])', [SHIP_PARK, ids]);
+    const moved = [], parked = [];
+    for (const r of bad) {
+      const to = idOf.get(r.name);
+      if (to == null) { parked.push({ id: r.id + SHIP_PARK, name: r.name }); continue; }
+      await client.query('UPDATE player_ships SET ship_id = $1 WHERE ship_id = $2', [to, r.id + SHIP_PARK]);
+      await client.query('UPDATE ships SET id = $1 WHERE id = $2', [to, r.id + SHIP_PARK]);
+      moved.push({ name: r.name, from: r.id, to });
+    }
+    await client.query(`ALTER TABLE player_ships ADD CONSTRAINT player_ships_ship_id_fkey
+                        FOREIGN KEY (ship_id) REFERENCES ships(id)`);
+    await client.query('COMMIT');
+    console.warn('[migrate] ships: renumbered %d row(s) onto the seed ids: %s%s',
+      moved.length, moved.map((m) => `${m.name} ${m.from}→${m.to}`).join(', ') || '(none)',
+      parked.length ? `; left parked (not in the seed; enemies are pruned next): ${parked.map((p) => `${p.name}@${p.id}`).join(', ')}` : '');
+    return { moved, parked };
+  } catch (e) {
+    await client.query('ROLLBACK');   // a half-renumbered ships table must not boot
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
 // Idempotent schema bootstrap + the migrations_pg one-shot ledger — the single, forward-only
 // migration story (DECISIONS §9). Safe to run on every boot: CREATE TABLE IF NOT EXISTS + guarded
 // ALTER/one-shots, then an upsert of the catalog from catalog_seed.js.
@@ -379,7 +445,8 @@ export async function migrate() {
   `);
 
   // Upsert the catalog from the shared snapshot on every startup, so editing catalog_seed.js
-  // propagates on deploy (ids/foreign keys preserved — weapons keyed by id, ships/maps/levels by name).
+  // propagates on deploy (ids/foreign keys preserved — weapons/components/ships/levels keyed by explicit id,
+  // maps by name).
   const { SHIPS, WEAPONS, MAPS, LEVELS, COMPONENTS, SOUNDS, SOUND_MAP } = await import('./catalog_seed.js');
   for (const c of COMPONENTS) {
     await pool.query(
@@ -393,11 +460,14 @@ export async function migrate() {
        ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, type = EXCLUDED.type, price = EXCLUDED.price, stats = EXCLUDED.stats, model_url = EXCLUDED.model_url, model_url_high = EXCLUDED.model_url_high, rarity = EXCLUDED.rarity, color = EXCLUDED.color`,
       [w.id, w.name, w.type, w.price ?? 0, JSON.stringify(w.stats), w.modelUrl ?? null, w.modelUrlHigh ?? null, w.rarity, w.color]);
   }
+  // Ship ids are explicit (= prod's). Reconcile a database that numbered them differently FIRST — otherwise
+  // an explicit `id=368 'Basic pirate ship'` insert would hit UNIQUE(name) against a local row 2 of that name.
+  await reconcileShipIds(SHIPS);
   for (const s of SHIPS) {
     await pool.query(
-      `INSERT INTO ships (name, type, stats, model_url, model_url_high, components) VALUES ($1, $2, $3::jsonb, $4, $5, $6::jsonb)
-       ON CONFLICT (name) DO UPDATE SET type = EXCLUDED.type, stats = EXCLUDED.stats, model_url = EXCLUDED.model_url, model_url_high = EXCLUDED.model_url_high, components = EXCLUDED.components`,
-      [s.name, s.type, JSON.stringify(s.stats), s.modelUrl ?? null, s.modelUrlHigh ?? null, JSON.stringify(s.components)]);
+      `INSERT INTO ships (id, name, type, stats, model_url, model_url_high, components) VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7::jsonb)
+       ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, type = EXCLUDED.type, stats = EXCLUDED.stats, model_url = EXCLUDED.model_url, model_url_high = EXCLUDED.model_url_high, components = EXCLUDED.components`,
+      [s.id, s.name, s.type, JSON.stringify(s.stats), s.modelUrl ?? null, s.modelUrlHigh ?? null, JSON.stringify(s.components)]);
   }
   // Prune orphaned ENEMY ships left over from a rename/removal (the upsert above can't delete). Only
   // enemy rows no longer in the seed AND owned by no player (enemies never are) — player ships are never
@@ -409,6 +479,8 @@ export async function migrate() {
        AND id NOT IN (SELECT ship_id FROM player_ships)`,
       [enemyNames]);
   }
+  // keep the sequence at the max explicit id (the name-keyed upsert drifted prod's to 2929), as levels does
+  await pool.query(`SELECT setval('ships_id_seq', GREATEST((SELECT MAX(id) FROM ships), 1))`);
   for (const m of MAPS) {
     await pool.query(
       `INSERT INTO maps (name, descriptor) VALUES ($1, $2::jsonb)
@@ -925,20 +997,29 @@ export async function getAdminPlayers(limit = 1000) {
   }));
 }
 
-// Catalog: ships, weapons, components. JSONB columns come back already parsed.
+// Catalog: ships, weapons, components. JSONB columns come back already parsed. ONE column list + ONE row
+// mapper per table, shared by the /api getters and catalogItem (stash / shop / equip lookups), so a stash
+// row carries the same fields (rarity, color, model URLs) as the catalog row it points at.
+const SHIP_COLS = 'id, name, type, stats, model_url, model_url_high, components';
+const WEAPON_COLS = 'id, name, type, price, stats, model_url, model_url_high, rarity, color';
+const COMPONENT_COLS = 'id, name, type, weight, price, stats, model_url, model_url_high, rarity, color';
+const shipRow = (r) => ({ id: Number(r.id), name: r.name, type: r.type, stats: r.stats, modelUrl: r.model_url, modelUrlHigh: r.model_url_high, components: r.components });
+const weaponRow = (r) => ({ id: Number(r.id), name: r.name, type: r.type, price: r.price, stats: r.stats, modelUrl: r.model_url, modelUrlHigh: r.model_url_high, rarity: r.rarity, color: r.color });
+const componentRow = (r) => ({ id: Number(r.id), name: r.name, type: r.type, weight: r.weight, price: r.price, stats: r.stats, modelUrl: r.model_url, modelUrlHigh: r.model_url_high, rarity: r.rarity, color: r.color });
+
 export async function getShips() {
-  const { rows } = await pool.query('SELECT id, name, type, stats, model_url, model_url_high, components FROM ships ORDER BY id');
-  return rows.map((r) => ({ id: Number(r.id), name: r.name, type: r.type, stats: r.stats, modelUrl: r.model_url, modelUrlHigh: r.model_url_high, components: r.components }));
+  const { rows } = await pool.query(`SELECT ${SHIP_COLS} FROM ships ORDER BY id`);
+  return rows.map(shipRow);
 }
 
 export async function getWeapons() {
-  const { rows } = await pool.query('SELECT id, name, type, price, stats, model_url, model_url_high, rarity, color FROM weapons ORDER BY id');
-  return rows.map((r) => ({ id: Number(r.id), name: r.name, type: r.type, price: r.price, stats: r.stats, modelUrl: r.model_url, modelUrlHigh: r.model_url_high, rarity: r.rarity, color: r.color }));
+  const { rows } = await pool.query(`SELECT ${WEAPON_COLS} FROM weapons ORDER BY id`);
+  return rows.map(weaponRow);
 }
 
 export async function getComponents() {
-  const { rows } = await pool.query('SELECT id, name, type, weight, price, stats, model_url, model_url_high, rarity, color FROM components ORDER BY id');
-  return rows.map((r) => ({ id: Number(r.id), name: r.name, type: r.type, weight: r.weight, price: r.price, stats: r.stats, modelUrl: r.model_url, modelUrlHigh: r.model_url_high, rarity: r.rarity, color: r.color }));
+  const { rows } = await pool.query(`SELECT ${COMPONENT_COLS} FROM components ORDER BY id`);
+  return rows.map(componentRow);
 }
 
 // SFX catalog: sounds registry (key->url) + class-based routing map.
@@ -1001,14 +1082,14 @@ export const WEAPON_GROUP = Object.fromEntries(
 
 async function catalogItem(kind, refId, client = pool) {
   if (kind === 'component') {
-    const { rows } = await client.query('SELECT id, name, type, weight, price, stats FROM components WHERE id = $1', [refId]);
+    const { rows } = await client.query(`SELECT ${COMPONENT_COLS} FROM components WHERE id = $1`, [refId]);
     const r = rows[0];
-    return r ? { kind, refId: Number(r.id), name: r.name, type: r.type, weight: r.weight, price: r.price, stats: r.stats } : null;
+    return r ? { kind, refId: Number(r.id), ...componentRow(r) } : null;
   }
   if (kind === 'weapon') {
-    const { rows } = await client.query('SELECT id, name, type, price, stats FROM weapons WHERE id = $1', [refId]);
+    const { rows } = await client.query(`SELECT ${WEAPON_COLS} FROM weapons WHERE id = $1`, [refId]);
     const r = rows[0];
-    return r ? { kind, refId: Number(r.id), name: r.name, type: r.type, price: r.price, stats: r.stats } : null;
+    return r ? { kind, refId: Number(r.id), ...weaponRow(r) } : null;
   }
   return null;
 }

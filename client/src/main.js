@@ -5,6 +5,7 @@
 // modules out of here next; for now it is the single composition root.
 import { benchMode, isBench, BENCH_DT } from './bench.js'; // ?bench replay perf gate (flag + the fixed 1/60 step)
 import { seedSim, isSimSeeded } from './sim-core/sim-random.js'; // the seeded GAMEPLAY stream (opt-in per draw site, DECISIONS §73)
+import { catalogFromRows, shipById } from './sim-core/catalog.js'; // the one catalog flatten + id lookup, shared with server/src/sim-host.js
 import { worldDigest } from './sim-core/digest.js'; // the World as one comparable value (browser↔Node oracle)
 import { evalNetsim, netsimForBrawl, netBadgeReason, connectNetsim, netsimDeferReason, isUnroomableSideMission } from './netsim.js'; // ?netsim: play a level in a SERVER-run room
 import { createNetState, applySnapshot, renderNet, clearNet } from './netsim-world.js';
@@ -1591,7 +1592,6 @@ if (location.search.includes('debug')) {
 // See docs/plans/2026-07-04-0949-perf-benchmark-replay.md (Component 3).
 if (isBench()) {
   const median = (a) => { if (!a.length) return 0; const s = a.slice().sort((x, y) => x - y); const m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
-  const shipById = (id) => { for (const s of CATALOG.shipByName.values()) if (s.id === id) return s; return null; };
   // cheap deterministic state hash (rounded entity positions) — the self-check compares it across reps
   const stateHash = () => {
     let h = 2166136261 >>> 0;
@@ -1652,7 +1652,7 @@ if (isBench()) {
       const setup = trace.setup || {};
       // 1. deterministic setup: re-seed, build the fixed ship, reset to a clean fight, spawn the fixed waves.
       seedSim(trace.seed);
-      const shipDef = setup.shipId != null ? shipById(setup.shipId) : null;
+      const shipDef = setup.shipId != null ? shipById(CATALOG, setup.shipId) : null;
       if (shipDef) buildPlayerFor(shipDef);
       reset();
       // PRECONDITION (plan Component 3 step 1): reset() does NOT set G.gameStarted — the launch flows do, and
@@ -1703,7 +1703,7 @@ if (isBench()) {
     // slot-0-pinning guard, now reverted). Deterministic; the canonical track is a real in-game recording anyway.
     async bakeBackdrop({ seconds = 15, fps = 20 } = {}) {
       seedSim(BENCH_SEED);                       // deterministic
-      const playerDef = shipById(1); if (playerDef) buildPlayerFor(playerDef);
+      const playerDef = shipById(CATALOG, 1); if (playerDef) buildPlayerFor(playerDef);
       reset(); G.gameStarted = true;
       const defs = [CATALOG.enemyShips[0], CATALOG.enemyShips[0], CATALOG.enemyShips[1] || CATALOG.enemyShips[0],
                     CATALOG.enemyShips[2] || CATALOG.enemyShips[0], CATALOG.enemyShips[0]];
@@ -1732,8 +1732,6 @@ if (isBench()) {
 // ---------- Input-replay: record + playback sessions (?record / ?playback) ----------
 // The engine-facing half of replay.js. A recording captures the seed + per-tick input; playback re-runs the
 // REAL sim from it (animate() applies the recorded input each frame). Both force the fixed BENCH_DT step above.
-
-const shipByIdGlobal = (id) => { for (const s of CATALOG.shipByName.values()) if (s.id === id) return s; return null; };
 
 // Load a trace by id: the same-browser dev cache first (zero-friction record→playback loop), then a static
 // /recordings/{id}.json (the pulled S3 asset). Returns the parsed trace or null. `id` null → the 'last' slot.
@@ -1880,7 +1878,7 @@ function startPlaybackSession(trace) {
   // Rebuild the recorded ship BEFORE seeding — record built the player during bootstrap (pre-seed), so any
   // sim-RNG draw inside buildPlayerFor must NOT come out of the seeded stream, or the sim RNG offsets and the
   // whole replay diverges. Install the seed only after, so reset()+the fight draw from an identical stream.
-  const shipDef = trace.shipId != null ? shipByIdGlobal(trace.shipId) : null;
+  const shipDef = trace.shipId != null ? shipById(CATALOG, trace.shipId) : null;
   if (shipDef) {
     // Force the recorded ship+loadout+SKILLS (NEVER the current account's) so a replay is faithful
     // regardless of what the player has equipped or spent now. Old traces (no captured loadout/skills) fall
@@ -2234,13 +2232,9 @@ async function bootstrap() {
     // re-calling it is free.
     samplesLoaded = true;
     audio.preloadSamples(soundUrls);
-    // Weapons are flattened (stats spread to top level); keep the model URLs too (the `...w.stats` spread
-    // also lifts `stats.model` to a top-level `model` key — read by itemModelCfg). Components are stored
-    // whole, so their `modelUrlHigh` + nested `stats.model` flow through as-is.
-    for (const w of weapons) CATALOG.weapons.set(w.id, { id: w.id, name: w.name, type: w.type, price: w.price, modelUrl: w.modelUrl, modelUrlHigh: w.modelUrlHigh, rarity: w.rarity, color: w.color, ...w.stats });
-    for (const c of components) CATALOG.components.set(c.id, c);
-    CATALOG.enemyShips = ships.filter((s) => s.type === 'enemy');
-    for (const s of ships) CATALOG.shipByName.set(s.name, s);
+    // The ONE flatten shared with the server's buildCatalog (sim-core/catalog.js): fills CATALOG in place —
+    // its identity is load-bearing (`world.catalog = CATALOG`). Ships come out id-ordered.
+    catalogFromRows({ weapons, components, ships }, CATALOG);
     // ?ally / ?lancer / ?duel (dev): inject the wingman's arrival phase, swap a phase's pool for pirate
     // lancers, and/or replace the whole script with the sparring room. Each is a strict no-op with its own
     // flag off (the same object back out); `?duel` runs last because it discards what the others wrote.
