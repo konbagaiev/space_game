@@ -251,6 +251,10 @@
     "source": "Accel",
     "context": "Stat label — acceleration. Very short, abbreviated."
   },
+  "ui.shop.stat.power": {
+    "source": "Power",
+    "context": "Stat label — an engine's or thruster's raw power (not the ship's resulting acceleration/turn rate). Very short."
+  },
   "ui.shop.stat.maneuver": {
     "source": "Turn",
     "context": "Stat label — maneuverability / turn rate. Very short, abbreviated."

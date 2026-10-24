@@ -52,8 +52,8 @@ function statLine(kind, type, s, weight) {
   const add = (label, val) => { if (val != null && val !== 0) parts.push(`${t(label)} ${val}`); };
   if (kind === 'component') {
     if (type === 'hull') add('ui.shop.stat.hp', s.durability);
-    else if (type === 'engine') add('ui.shop.stat.accel', s.power); // engine.maxSpeed caps ENEMIES only — the player's cap is the bar's Top speed
-    else if (type === 'thruster') add('ui.shop.stat.maneuver', s.power);
+    else if (type === 'engine') add('ui.shop.stat.power', s.power); // raw catalog power, not the bar's Accel (power ÷ mass, skills applied); engine.maxSpeed caps ENEMIES only — the player's cap is the bar's Top speed
+    else if (type === 'thruster') add('ui.shop.stat.power', s.power); // raw power, not the bar's Turn rate
     else if (type === 'repair') {
       parts.push(`${t('ui.shop.stat.heal')} +${s.repairPerTick}/${s.intervalSec}s`);
       if (s.maxFraction != null) parts.push(`${t('ui.shop.stat.cap')} ${Math.round(s.maxFraction * 100)}%`);

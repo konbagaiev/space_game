@@ -298,7 +298,7 @@ export default async function ({ page, assert, shot }) {
     .map((r) => ({ name: r.querySelector('.lp-name').textContent, stats: (r.querySelector('.lp-stats') || {}).textContent || '' })));
   const solid = engineRows.find((r) => /Solid-fuel engine/.test(r.name));
   assert.ok(solid, 'the Solid-fuel engine (catalog maxSpeed 12) is on the engine shelf');
-  assert.ok(/Accel 21/.test(solid.stats), `its stat line still shows its acceleration (${solid.stats})`);
+  assert.ok(/Power 21/.test(solid.stats), `its stat line shows its raw power as "Power", not "Accel" (${solid.stats})`);
   assert.ok(engineRows.every((r) => !/Top speed/.test(r.stats)), 'no engine stat line shows a top speed');
 
   // clear the mission the way the victory path does (POST /missions/clear), then land again

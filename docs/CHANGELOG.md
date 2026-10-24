@@ -5,6 +5,11 @@
 
 ## 2026-10-24
 
+- **Shop: engine and thruster stat lines say "Power"** — an engine's line read "Accel" and a thruster's "Turn",
+  the same labels the Loadout stats bar uses for the ship's resulting acceleration and turn rate (power ÷ mass,
+  skills applied), so two different numbers shared one name. Both item lines now show their raw catalog
+  `power` as **Power** / **Мощн.** (new key `ui.shop.stat.power`); the bar keeps Accel / Turn. Scenario
+  `05-hangar-shop` asserts the new label.
 - **Drift-fix Phase 5: `?record` keeps skills, rooms know what you own, a stashed reward counts as owned**
   `[2026-10-23-1823-record-skills-netsim-ship]`. (B5) Both recorders — the dev `?record` and the live
   session recorder — now take the flown ship from one pure helper, `flownBuild()` (`client/src/replay.js`),
