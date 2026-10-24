@@ -4,6 +4,7 @@
 // weapons; this module derives mobility from the engine/thrusters and the ship's mass. The
 // component/weapon DATA itself lives in the database (see server/src/catalog_seed.js).
 // ==================================================================
+import { COMPONENT_SLOTS } from './shop-rules.js'; // the equipment slots, shared with the shop UI + server
 
 // Reference mass at which a ship's engine/thruster stats apply 1:1. = the player's starter loadout
 // (hull 20 + engine 10 + thrusters 4 + gun 6 + rocket 8 + grab 2 = 50). Lighter ships get a boost
@@ -11,10 +12,10 @@
 // auto-equipped, so the player's baseline accel 10 / turn 2.0 is unchanged (mass-neutral, by design).
 export const REFERENCE_MASS = 50;
 
-// Total ship mass = hull + engine + thruster + repair-drone + grab weight + the weight of every mounted weapon.
+// Total ship mass = every component slot's weight (COMPONENT_SLOTS, shop-rules.js) + every mounted weapon's.
 export function shipMass(ship) {
   let mass = 0;
-  for (const slot of ['hull', 'engine', 'thruster', 'repair', 'grab', 'shield']) {
+  for (const slot of COMPONENT_SLOTS) {
     if (ship[slot] && typeof ship[slot].weight === 'number') mass += ship[slot].weight;
   }
   if (Array.isArray(ship.mounts)) {

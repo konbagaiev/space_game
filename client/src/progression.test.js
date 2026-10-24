@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { liveProgress, levelFromXp, levelUpCost, XP_BASE, XP_STEP } from './progression.js';
+import { liveProgress, levelFromXp, levelUpCost, XP_BASE, XP_STEP, adoptBankedProgression } from './progression.js';
 import * as server from '../../server/src/progression.js';
 
 // The client duplicates the XP curve because it is served as static ES modules and cannot import from
@@ -35,4 +35,44 @@ test('liveProgress: no earned XP (or missing progression) is the banked state it
   assert.deepEqual(liveProgress({ level: 4, xpIntoLevel: 800 }), { level: 4, into: 800, span: 3000 });
   assert.deepEqual(liveProgress(null, 0), { level: 0, into: 0, span: 1000 });
   assert.deepEqual(liveProgress({ level: 1, xpIntoLevel: 200 }, -50), { level: 1, into: 200, span: 1500 });
+});
+
+// ---- adoptBankedProgression: what the client holds after POST /api/games banks a run ----
+// The server returns the full `progression` (the GET active-ship object); the client must ADOPT it, not
+// rebuild it from the flat fields — a rebuild can't know about a skill spent since, so it drifted.
+const BANKED_PREV = Object.freeze({ experience: 900, level: 0, xpIntoLevel: 900, xpForNextLevel: 1000,
+  skillPoints: 1, skills: Object.freeze({ kinetic: 0 }) });
+
+test('adoptBankedProgression: a server progression is the authority, even when a local rebuild disagrees', () => {
+  // 2500 XP = level 2 (two levels gained from level 0). The rebuild would say skillPoints 1 + 2 = 3; the
+  // server knows one point was spent since and says 2. The server wins.
+  const res = { experience: 2500, level: 2, leveledUp: true, xpEarned: 1600,
+    progression: { experience: 2500, level: 2, xpIntoLevel: 0, xpForNextLevel: 2000, skillPoints: 2,
+      skills: { kinetic: 1 } } };
+  const out = adoptBankedProgression(BANKED_PREV, res);
+  assert.deepEqual(out, res.progression);
+  assert.notEqual(out, res.progression, 'a copy, not the response object');
+  assert.notDeepEqual(out, adoptBankedProgression(BANKED_PREV, { ...res, progression: undefined }),
+    'the case really is one where the local rebuild would disagree');
+});
+
+test('adoptBankedProgression: an old server (flat fields only) falls back to the curve, +1 point per level gained', () => {
+  const out = adoptBankedProgression(BANKED_PREV, { experience: 2500, level: 2, leveledUp: true, xpEarned: 1600 });
+  const at = levelFromXp(2500);
+  assert.equal(out.experience, 2500);
+  assert.equal(out.level, 2);
+  assert.equal(out.xpIntoLevel, at.into);
+  assert.equal(out.xpForNextLevel, at.span);
+  assert.equal(out.skillPoints, BANKED_PREV.skillPoints + 2);
+  assert.deepEqual(out.skills, BANKED_PREV.skills);
+  // no level gained → no points added
+  assert.equal(adoptBankedProgression(BANKED_PREV, { experience: 950, level: 0 }).skillPoints, BANKED_PREV.skillPoints);
+});
+
+test('adoptBankedProgression: never mutates the previous progression', () => {
+  const prev = { experience: 900, level: 0, xpIntoLevel: 900, xpForNextLevel: 1000, skillPoints: 1, skills: {} };
+  const snap = JSON.parse(JSON.stringify(prev));
+  adoptBankedProgression(prev, { experience: 2500, level: 2 });
+  adoptBankedProgression(prev, { experience: 2500, level: 2, progression: { level: 2, skillPoints: 2 } });
+  assert.deepEqual(prev, snap);
 });

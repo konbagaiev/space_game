@@ -33,3 +33,18 @@ export function liveProgress(prog, earnedXp = 0) {
 export function levelFromXp(experience) {
   return liveProgress({ level: 0, xpIntoLevel: 0 }, Math.floor(experience || 0));
 }
+
+// The progression to hold after a run is banked. A server that returns `progression` (the same object
+// GET active-ship returns) is the authority. An OLD server (or the itch build hitting one) only returns
+// the flat { experience, level } — rebuild from the curve, adding one skill point per level gained.
+// Pure (returns a NEW object, never mutates `prev`) so it is unit-tested; net.js can't load under node.
+export function adoptBankedProgression(prev, res) {
+  if (res && res.progression) return { ...res.progression };
+  const p = { ...(prev || {}) };
+  const gained = Math.max(0, (res.level || 0) - (p.level || 0));
+  const at = levelFromXp(res.experience);
+  p.experience = res.experience; p.level = res.level;
+  p.xpIntoLevel = at.into; p.xpForNextLevel = at.span;
+  if (gained > 0) p.skillPoints = (p.skillPoints || 0) + gained;
+  return p;
+}

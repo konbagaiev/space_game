@@ -1,6 +1,6 @@
 # Duplication audit — close-out (every remaining item)
 
-**Date:** 2026-10-24. **Status:** not started.
+**Date:** 2026-10-24. **Status:** Phase 1 done; Phases 2–8 not started.
 **Source:** [`2026-10-20-duplication-audit.md`](2026-10-20-duplication-audit.md) (ids A6–A9, B3–B5, C1–C17 refer
 to it; read the matching section there for the original evidence). The first five phases of the clean-up are
 done — [`2026-10-20-base-menu-state-and-drift-fixes.md`](2026-10-20-base-menu-state-and-drift-fixes.md) fixed
@@ -35,6 +35,8 @@ in the audit rather than inventing work.
 ---
 
 ## Phase 1 — Shared contracts between client and server (C1, C2, C3, C4, C7)
+
+**Status:** done 2026-10-24 (`<commit>`), [plan](2026-10-24-1836-dedup-shared-contracts.md).
 
 Size M. Pattern: DECISIONS §136 — one pure module under `client/src/` (`sim-core/` if the sim needs it), the
 server imports it; a test recomputes instead of asserting a literal.

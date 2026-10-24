@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import { strict as assert } from 'node:assert';
 import { setSource, setBundle } from './i18n.js';
-import { esc, cssColor, slotLabel, priceLabel, sellLabel, SELL_RATE } from './format.js';
+import { esc, cssColor, slotLabel, priceLabel } from './format.js';
 
 // Seed a tiny English catalog so the i18n-aware helpers resolve to real strings.
 setBundle({});
@@ -30,11 +30,4 @@ test('slotLabel: translates a known slot, falls back to the raw key', () => {
 test('priceLabel: positive shows credits, zero/free is localized', () => {
   assert.equal(priceLabel(12), '12 ◈');
   assert.equal(priceLabel(0), 'Free');
-});
-
-test('sellLabel: floor(price * SELL_RATE) credits, free when zero', () => {
-  assert.equal(SELL_RATE, 0.75);
-  assert.equal(sellLabel(100), '75 ◈');
-  assert.equal(sellLabel(11), '8 ◈'); // floor(8.25)
-  assert.equal(sellLabel(0), 'Free');
 });

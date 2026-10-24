@@ -7,7 +7,7 @@
 import { G, CATALOG } from './state.js';
 import { API_BASE, BUILD_SOURCE } from './api-base.js';
 import { updateHud, announceLevel } from './hud.js';
-import { levelFromXp } from './progression.js';
+import { adoptBankedProgression } from './progression.js';
 import { buildMap } from './world.js';
 import { buildPlayerFor } from './ship-build.js';
 import { applyAllyDev } from './ally-dev.js';
@@ -87,20 +87,17 @@ export function bankRun() {
   }).then((r) => (r.ok ? r.json() : null))
     .then((res) => {
       if (res && typeof res.credits === 'number') { G.balance = res.credits; updateHud(); }
-      // Keep the in-memory progression fresh (level + XP into it + unspent points) so the Character screen
-      // is correct even before the hangar refetches the active ship. Newly-gained levels add that many
-      // skill points. The run's XP is now BANKED into those fields, so clear `G.earnedXp` in the same
-      // breath — otherwise the HUD keeps previewing it on top of the banked total and double-counts (the
-      // level-advance refetch of the active ship made that visible as a phantom extra level).
-      if (res && typeof res.experience === 'number' && G.activeShip && G.activeShip.progression) {
-        const p = G.activeShip.progression;
-        const gained = Math.max(0, (res.level || 0) - (p.level || 0));
-        const at = levelFromXp(res.experience);
-        p.experience = res.experience; p.level = res.level;
-        p.xpIntoLevel = at.into; p.xpForNextLevel = at.span;
-        if (gained > 0) p.skillPoints = (p.skillPoints || 0) + gained;
+      // Keep the in-memory progression fresh (level + XP into it + unspent points + skills) so the Character
+      // screen is correct even before the hangar refetches the active ship. The server returns the full
+      // `progression` (the same object GET active-ship returns) and we adopt it as-is; only an OLD server's
+      // flat { experience, level } falls back to a local rebuild (adoptBankedProgression). The run's XP is
+      // now BANKED, so clear `G.earnedXp` in the same breath — otherwise the HUD keeps previewing it on top
+      // of the banked total and double-counts (once visible as a phantom extra level).
+      if (res && G.activeShip && G.activeShip.progression
+          && (res.progression || typeof res.experience === 'number')) {
+        G.activeShip.progression = adoptBankedProgression(G.activeShip.progression, res);
         G.earnedXp = 0;
-        announceLevel(res.level); // no-op when the live HUD already toasted this level mid-fight
+        announceLevel(G.activeShip.progression.level); // no-op when the live HUD already toasted this level mid-fight
       }
     })
     .catch(() => {}); // best-effort: on failure the balance just isn't updated this run

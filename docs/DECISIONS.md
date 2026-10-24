@@ -7059,3 +7059,28 @@ and the read lists only `qty > 0`, so selling the last copy frees it and the cra
   call); the referee already compares credits/XP/kills, never the digest. No trace-format change,
   `TRACE_VERSION` stays 4.
 - **The equipped half was left as "any repair".** Tightening it to an exact id was not asked for.
+
+## 167. The server refuses a weapon type no slot takes
+
+**Date:** 2026-10-24. **Context:** duplication audit C2
+([`2026-10-24-1836-dedup-shared-contracts.md`](plans/2026-10-24-1836-dedup-shared-contracts.md)). The server
+kept its own weapon type → fire group map (`WEAPON_GROUP` in `db.js`) and sent any type missing from it to the
+`gun` slot (`|| 'gun'`), while the client's `GROUP_WEAPON_TYPE` (`shop-slots.js`) showed no slot for such a
+weapon. The two maps were kept in step by hand.
+
+**Decision.** `WEAPON_GROUP` is **derived** from `GROUP_WEAPON_TYPE` (via the pure `weaponGroupOf`), and
+`equipItem` answers a weapon whose type no group takes with `409 'no slot for this weapon type'`, checked before
+any write. No such weapon is in the catalog today, so nothing a player can do changes.
+
+- **Keep the `gun` fallback** — rejected: it lets the server install what the client cannot show, which is how
+  an invisible gun-slot weapon would happen.
+- **Give every new type a slot automatically** — rejected: which slot a weapon fires from (Space vs F, and what
+  it displaces) is a design call, not a default.
+
+**Consequence.** A new weapon type must be added to `GROUP_WEAPON_TYPE`; `server/src/shared-contracts.test.js`
+fails ("every weapon type in the seed has a fire group") until it is.
+
+Recorded here too, needing no entry of their own: C3 deleted the client's `sellLabel` (only its test used it) —
+the resale rule is now the one `sellPrice` in `sim-core/shop-rules.js`; and C4 kept the flat
+`{experience, level, leveledUp, xpEarned}` fields on `POST /api/games` next to the new `progression`, because the
+itch build and already-open tabs read them.

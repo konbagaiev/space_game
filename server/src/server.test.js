@@ -1,5 +1,7 @@
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
+// The one resale rule (shared with db.js /sell) — expected credits are recomputed from it, never a restated rate.
+import { sellPrice } from '../../client/src/sim-core/shop-rules.js';
 
 process.env.NODE_ENV = 'test'; // non-Secure cookies so local-http tests can read/replay them
 process.env.ADMIN_USER = 'admin';       // enable the /admin dashboard for the suite (Basic Auth)
@@ -293,6 +295,21 @@ test('progression: XP banks into experience and derives level + skill points (ac
   assert.equal(body2.experience, 3000);
   assert.equal(body2.level, 2);        // still level 2 (needs 4500 for level 3)
   assert.equal(body2.leveledUp, false);
+});
+
+// POST /api/games returns the SAME progression object GET active-ship does, so the client adopts it instead of
+// rebuilding it by hand (duplication audit C4). The flat fields stay for old clients (the itch build).
+test('progression: POST /api/games returns the active-ship progression, plus the flat fields old clients read', async () => {
+  await post('/api/players/register', { playerId: 'xp-prog' });
+  let body = await (await post('/api/games', { playerId: 'xp-prog', credits: 0, kills: 0, durationMs: 100, xp: 2500 })).json();
+  for (const f of ['experience', 'level', 'leveledUp', 'xpEarned']) assert.ok(f in body, `flat field ${f} kept`);
+  assert.deepEqual(body.progression, (await getJson('/api/players/xp-prog/active-ship')).progression);
+  // after a spend, skills + skillPoints are non-trivial — a flat-field rebuild would miss the spend
+  assert.equal((await post('/api/players/xp-prog/skills/spend', { skill: 'rocket' })).status, 200);
+  body = await (await post('/api/games', { playerId: 'xp-prog', xp: 0 })).json();
+  assert.equal(body.progression.skills.rocket, 1);
+  assert.equal(body.progression.skillPoints, 1);
+  assert.deepEqual(body.progression, (await getJson('/api/players/xp-prog/active-ship')).progression);
 });
 
 test('skills: spend allocates a point + decrements unspent; guards on no-points (409) and unknown skill (400)', async () => {
@@ -1052,9 +1069,9 @@ test('shop: buy adds to the stash; sell removes it; credits move by the item pri
   const bought = await (await post('/api/players/shop-trade/buy', { kind: 'component', refId: 1 })).json();
   assert.equal(bought.credits, start - 300); // price 300 deducted
   assert.ok(bought.stash.some((it) => it.kind === 'component' && it.refId === 1));
-  // sell it back — credit floor(300 * 0.75) = 225
+  // sell it back — credit sellPrice(300) (= floor(300 × SELL_RATE))
   const sold = await (await post('/api/players/shop-trade/sell', { kind: 'component', refId: 1 })).json();
-  assert.equal(sold.credits, start - 300 + 225);
+  assert.equal(sold.credits, start - 300 + sellPrice(300));
   assert.ok(!sold.stash.some((it) => it.kind === 'component' && it.refId === 1), 'sold item left the stash');
 });
 
@@ -1104,13 +1121,13 @@ test('shop: sell honors a quantity, clamps to what is owned, and rejects a bad q
   // refuses to SELL it in the shop: buyable:false).
   await post('/api/players/sell-qty/loot', { items: [1, 2, 3].map(() => ({ kind: 'component', refId: 2 })) });
   const before = (await getJson('/api/players/sell-qty/stash')).credits;
-  // sell 2 of the 3 → credit 2 × floor(150*0.75)=112 = 224; one left in the stash
+  // sell 2 of the 3 → credit 2 × sellPrice(150); one left in the stash
   const sold2 = await (await post('/api/players/sell-qty/sell', { kind: 'component', refId: 2, qty: 2 })).json();
-  assert.equal(sold2.credits, before + 224);
+  assert.equal(sold2.credits, before + 2 * sellPrice(150));
   assert.equal(sold2.stash.find((it) => it.kind === 'component' && it.refId === 2).qty, 1, 'one remains after selling two');
-  // ask to sell 5 but only 1 remains → clamps to 1 (credit +112), row disappears
+  // ask to sell 5 but only 1 remains → clamps to 1 (credit + sellPrice(150)), row disappears
   const sold1 = await (await post('/api/players/sell-qty/sell', { kind: 'component', refId: 2, qty: 5 })).json();
-  assert.equal(sold1.credits, before + 224 + 112);
+  assert.equal(sold1.credits, before + 3 * sellPrice(150));
   assert.ok(!sold1.stash.some((it) => it.kind === 'component' && it.refId === 2), 'stash row gone after clamped sell');
   // qty < 1 is rejected (validated before touching the stash)
   assert.equal((await post('/api/players/sell-qty/sell', { kind: 'component', refId: 2, qty: 0 })).status, 400);
@@ -1423,13 +1440,14 @@ test('shop: real catalog prices — buy deducts, sell refunds 75%, overspend -> 
   const owned = bought.stash.find((it) => it.kind === 'weapon' && it.refId === 1);
   assert.equal(owned.qty, 2);
   assert.equal(owned.price, 800);
-  // sell one back for floor(800 * 0.75) = 600
+  // sell one back for sellPrice(800), on top of the 200 left after the purchase above
   const sold = await (await post('/api/players/shop-price/sell', { kind: 'weapon', refId: 1 })).json();
-  assert.equal(sold.credits, 800);
-  // Heavy hull (component 13) costs 6000 — can't afford from 800 → 402, nothing spent
+  const afterSale = 200 + sellPrice(800);
+  assert.equal(sold.credits, afterSale);
+  // Heavy hull (component 13) costs 6000 — can't afford from what's left → 402, nothing spent
   const broke = await post('/api/players/shop-price/buy', { kind: 'component', refId: 13 });
   assert.equal(broke.status, 402);
-  assert.equal((await getJson('/api/players/shop-price/stash')).credits, 800);
+  assert.equal((await getJson('/api/players/shop-price/stash')).credits, afterSale);
 });
 
 test('catalog: the player shop ladder is seeded with prices (components + weapons)', async () => {
@@ -1688,4 +1706,25 @@ test('NEW_PLAYER_DEFAULTS: a fresh player, a reset player and the register respo
   for (const c of cols) assert.notDeepEqual(dirty[c], D[c], `${c} was dirtied`);
   assert.deepEqual(await resetPlayer('np-dirty'), { found: true });
   assert.deepEqual(await read('np-dirty'), expected);
+});
+
+// ---------- SKILLS (client/src/sim-core/skills.js): one list for columns, defaults and the spend whitelist ----------
+test('SKILLS: every shared skill has a players column, a zero new-player default and is spendable', async () => {
+  const { SKILLS, skillColumn } = await import('../../client/src/sim-core/skills.js');
+  const { pool, NEW_PLAYER_DEFAULTS: D } = await import('./datastore.js');
+  const { rows } = await pool.query(
+    "SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'players'");
+  const cols = new Set(rows.map((r) => r.column_name));
+  for (const k of SKILLS) {
+    assert.equal(D[skillColumn(k)], 0, `NEW_PLAYER_DEFAULTS.${skillColumn(k)} is 0`);
+    assert.ok(cols.has(skillColumn(k)), `players.${skillColumn(k)} column exists`);
+  }
+  await post('/api/players/register', { playerId: 'sk-all' });
+  // 10000 XP = level 5 (1000+1500+2000+2500+3000) → five unspent points, one per skill.
+  await post('/api/games', { playerId: 'sk-all', xp: 10000 });
+  for (const k of SKILLS) {
+    const r = await post('/api/players/sk-all/skills/spend', { skill: k });
+    assert.equal(r.status, 200, `spend "${k}" → ${r.status}`);
+    assert.equal((await r.json()).progression.skills[k], 1, `skill "${k}" holds the point`);
+  }
 });

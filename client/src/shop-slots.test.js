@@ -7,7 +7,8 @@
 // this reason.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { GROUP_WEAPON_TYPE, isWeaponSlot, slotAcceptsWeaponType } from './shop-slots.js';
+import { GROUP_WEAPON_TYPE, isWeaponSlot, slotAcceptsWeaponType, weaponGroupOf } from './shop-slots.js';
+import { COMPONENT_SLOTS, REQUIRED_SLOTS } from './sim-core/shop-rules.js';
 
 test('the GUN slot is the PRIMARY weapon slot: a bullet OR a beam, never a rocket', () => {
   assert.equal(slotAcceptsWeaponType('gun', 'bullet'), true);
@@ -22,7 +23,7 @@ test('the ROCKET slot takes rockets and nothing else', () => {
 });
 
 test('a COMPONENT slot key is not a weapon slot and accepts no weapon type', () => {
-  for (const slot of ['hull', 'engine', 'thruster', 'repair', 'grab', 'shield']) {
+  for (const slot of COMPONENT_SLOTS) {
     assert.equal(isWeaponSlot(slot), false, `${slot} is a component slot`);
     for (const type of ['bullet', 'beam', 'rocket']) {
       assert.equal(slotAcceptsWeaponType(slot, type), false, `${slot} must not take a ${type}`);
@@ -44,4 +45,18 @@ test('every accepted type is a list, so `equippedInSlot`\'s truthiness test stil
   for (const v of Object.values(GROUP_WEAPON_TYPE)) {
     assert.ok(Array.isArray(v) && v.length > 0);
   }
+});
+
+// The server derives its weapon routing from GROUP_WEAPON_TYPE through this helper (DECISIONS §167): a type
+// no group takes is REFUSED at /equip (409), never quietly installed into the gun slot.
+test('weaponGroupOf: the fire group a weapon type installs into, null when no slot takes it', () => {
+  assert.equal(weaponGroupOf('bullet'), 'gun');
+  assert.equal(weaponGroupOf('beam'), 'gun');
+  assert.equal(weaponGroupOf('rocket'), 'rocket');
+  assert.equal(weaponGroupOf('laser'), null);
+  assert.equal(weaponGroupOf(undefined), null);
+});
+
+test('every REQUIRED slot is a COMPONENT slot (the shared lists in sim-core/shop-rules.js)', () => {
+  for (const s of REQUIRED_SLOTS) assert.ok(COMPONENT_SLOTS.includes(s), `${s} is a component slot`);
 });

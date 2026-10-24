@@ -7,9 +7,11 @@
 //
 // The `gun` group is the PRIMARY WEAPON slot: a bullet OR a beam, never both at once — installing one
 // replaces the other, which is what makes buying the Charged beam a real trade (you give up your rapid
-// gun). The server routes the same way (`WEAPON_GROUP` in `server/src/db.js`).
+// gun). The server DERIVES its routing from this map (`WEAPON_GROUP` in `server/src/db.js` is built from it,
+// and `/equip` refuses a type no group takes with a 409 — DECISIONS §167), so this is the one place to add a
+// weapon type to a slot.
 //
-// Pure data + three predicates: no DOM, no THREE, no state.
+// Pure data + predicates: no DOM, no THREE, no state.
 export const GROUP_WEAPON_TYPE = { gun: ['bullet', 'beam'], rocket: ['rocket'] };
 
 // Is this loadout slot key a WEAPON fire group (rather than a component slot like `hull`)?
@@ -18,3 +20,7 @@ export const isWeaponSlot = (slotKey) => !!GROUP_WEAPON_TYPE[slotKey];
 // Does this slot take a weapon of this catalog `type`?
 export const slotAcceptsWeaponType = (slotKey, type) =>
   !!GROUP_WEAPON_TYPE[slotKey] && GROUP_WEAPON_TYPE[slotKey].includes(type);
+
+// Which fire group a catalog weapon `type` installs into, or null when no slot takes it.
+export const weaponGroupOf = (type) =>
+  Object.keys(GROUP_WEAPON_TYPE).find((g) => GROUP_WEAPON_TYPE[g].includes(type)) ?? null;
