@@ -153,7 +153,8 @@ export function attachNetsim(httpServer, { tickets, loadShip = null, bankRun = n
         const active = (loadShip && !brawl) ? await loadShip(playerId) : null;
         if (active && active.ship) {
           ship = { shipId: active.ship.id, loadout: active.loadout, components: active.components,
-                   skills: active.progression && active.progression.skills };
+                   skills: active.progression && active.progression.skills,
+                   activeShip: active }; // ownsReward reads it (equipped OR stashed reward → no crate), DECISIONS §166
         }
       } catch (err) { log.warn?.(`[netsim] could not load the ship for ${playerId}: ${err.message}`); }
 

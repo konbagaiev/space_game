@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   TRACE_VERSION, normalizeLevelName, evalRecord, evalPlayback,
-  snapshotInput, applyInput, makeTrace, validateTrace, makeReplaySession, stepReplayTick,
+  snapshotInput, applyInput, makeTrace, flownBuild, validateTrace, makeReplaySession, stepReplayTick,
   RETURN_HOME_STALL_TICKS, packTicks, unpackTicks, sameInput, hydrateTrace, traceTickCount, traceLevelName,
 } from './replay.js';
 
@@ -437,4 +437,35 @@ test('validateTrace accepts a good room and rejects a malformed one', () => {
 // marker is for shape changes that break a reader), so pin it rather than letting it drift.
 test('TRACE_VERSION is still 4 — the room is additive, not a shape change', () => {
   assert.equal(TRACE_VERSION, 4);
+});
+
+// Audit B5: ?record dropped skills because it repeated the "what was flown" check by hand. Both recorders
+// now call flownBuild; this pins that the helper + makeTrace carry the allocation end to end.
+test('flownBuild + makeTrace round-trip the flown skills', () => {
+  const loadout = { mounts: [{ weapon: 5, group: 0 }] };
+  const components = { hull: 2, engine: 3, repair: 12 };
+  const activeShip = { ship: { name: 'Falcon' }, loadout, components, progression: { skills: { kinetic: 2, maneuver: 1 } } };
+  const shipByName = new Map([['Falcon', { id: 3 }], ['Other', { id: 4 }]]);
+  const trace = makeTrace({ id: 't', level: 'level-1', seed: 9, dt: 1 / 60,
+    ...flownBuild({ activeShip, shipName: 'Falcon', shipByName }), ticks: [] });
+  assert.deepEqual(trace.skills, { kinetic: 2, maneuver: 1 });
+  assert.equal(trace.shipId, 3);
+  assert.deepEqual(trace.loadout, loadout);
+  assert.deepEqual(trace.components, components);
+
+  // The built ship is NOT the active ship → catalog defaults on playback: everything null, id from the map.
+  assert.deepEqual(flownBuild({ activeShip, shipName: 'Other', shipByName }),
+    { shipId: 4, loadout: null, components: null, skills: null });
+  assert.deepEqual(flownBuild({ activeShip, shipName: 'Unknown', shipByName }),
+    { shipId: 1, loadout: null, components: null, skills: null }); // unknown name → the `?? 1` fallback
+
+  // No account record at all → all nulls, no throw.
+  assert.deepEqual(flownBuild({ activeShip: null, shipName: 'Falcon', shipByName }),
+    { shipId: 3, loadout: null, components: null, skills: null });
+
+  // The active ship with NO progression → loadout/components kept, skills null.
+  const noProg = flownBuild({ activeShip: { ship: { name: 'Falcon' }, loadout, components }, shipName: 'Falcon', shipByName });
+  assert.equal(noProg.skills, null);
+  assert.deepEqual(noProg.loadout, loadout);
+  assert.equal(makeTrace({ id: 'u', level: 'level-1', seed: 1, dt: 1 / 60, ...noProg, ticks: [] }).skills, null);
 });

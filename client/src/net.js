@@ -117,6 +117,9 @@ export function refreshAfterRoomBank() {
   banking = fetchJson(`/api/players/${G.playerId}/active-ship`).then((active) => {
     if (!active) return;
     if (typeof active.credits === 'number') { G.balance = active.credits; }
+    // Best-effort: the room deposits its loot server-side and its ordering against this read is not
+    // verified. A stale value is harmless — a room reads the account fresh, and Loadout refetches the stash.
+    if (G.activeShip && active.stashRefs) G.activeShip.stashRefs = active.stashRefs;
     const p = active.progression;
     if (p && G.activeShip) {
       const before = (G.activeShip.progression && G.activeShip.progression.level) || 0;
@@ -157,12 +160,20 @@ export function postSession({ id, trace, level, outcome, durationMs, kills, anch
 
 // Dump a mission's collected loot into the stash (victory only — see DECISIONS). Best-effort, like
 // bankRun: the Main Window re-fetches the stash when opened, so a dropped request just isn't banked.
+// After a successful deposit, re-read the account and copy ONLY `stashRefs` onto G.activeShip (a partial
+// update like refreshAfterRoomBank's): a just-looted reward then counts as owned on the next run
+// (rewardOwned, DECISIONS §166) without this read clobbering a newer loadout/progression. Known harmless race:
+// loadAdvancedLevel's full /active-ship refetch may land AFTER this one and restore the pre-deposit stashRefs,
+// so a just-looted reward can drop once more until the next Loadout open refetches.
 export function depositLoot(items) {
   if (!G.playerId || !items || !items.length) return;
   fetch(API_BASE + `/api/players/${G.playerId}/loot`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ items }),
-  }).catch(() => {});
+  })
+    .then((r) => (r.ok ? fetchJson(`/api/players/${G.playerId}/active-ship`) : null))
+    .then((a) => { if (a && G.activeShip) G.activeShip.stashRefs = a.stashRefs; })
+    .catch(() => {});
 }
 
 // Build a compact referrer string (document.referrer + ?ref=/UTM params), omitting empty keys. Sent once

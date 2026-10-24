@@ -173,6 +173,22 @@ export function applyInput(tick, keys, touchAim) {
 // ~200 u out is a ~7 s flight — 8 s would abort real runs. 15 s is ~2× the expected worst case.
 export const RETURN_HOME_STALL_TICKS = 900;
 
+// What ship was ACTUALLY flown, as the trace must record it: the active ship's persisted
+// loadout/components/skills when the built ship IS the active ship, else nulls (the bootstrap built the
+// ship's catalog defaults, and playback falls back to those too). The ONE copy of this check — both
+// recorders (?record and the live session recorder) call it; the copy that drifted dropped skills (audit B5).
+// `?beam`'s swapped-in weapon is NOT captured here (known gap, see SUMMARY).
+export function flownBuild({ activeShip, shipName, shipByName }) {
+  const shipId = ((shipByName && shipByName.get(shipName)) || {}).id ?? 1;
+  const active = !!(activeShip && activeShip.ship && activeShip.ship.name === shipName);
+  return {
+    shipId,
+    loadout: active ? activeShip.loadout : null,
+    components: active ? activeShip.components : null,
+    skills: (active && activeShip.progression) ? activeShip.progression.skills : null,
+  };
+}
+
 // Assemble a trace object from the captured run. `seed` is the mulberry32 seed actually installed at record
 // start (the ONLY thing beyond input that determinism needs — the audit found no other non-seeded source in the
 // sim path). `dt` is the fixed step used both to record and to replay. `shipId` + `loadout`/`components` rebuild

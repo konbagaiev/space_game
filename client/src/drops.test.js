@@ -114,6 +114,19 @@ test('rewardOwned: L2 component reward is owned iff the repair slot is filled', 
   assert.equal(rewardOwned({ components: { repair: null } }, reward), false);
 });
 
+test('rewardOwned: a reward in the stash counts as owned; sold (absent) does not', () => {
+  const mg = { kind: 'weapon', refId: 5 };
+  const basic = { loadout: { mounts: [{ weapon: 1 }] } };
+  assert.equal(rewardOwned({ loadout: { mounts: [{ weapon: 5 }] } }, mg), true);                    // equipped, unchanged
+  assert.equal(rewardOwned({ ...basic, stashRefs: [{ kind: 'weapon', refId: 5 }] }, mg), true);   // in the stash
+  assert.equal(rewardOwned({ ...basic, stashRefs: [{ kind: 'weapon', refId: 1 }] }, mg), false);  // neither
+  assert.equal(rewardOwned({ ...basic, stashRefs: [] }, mg), false);                              // sold: qty-0 rows are omitted
+  const drone = { kind: 'component', refId: 12 };
+  assert.equal(rewardOwned({ components: {}, stashRefs: [{ kind: 'component', refId: 12 }] }, drone), true);
+  assert.equal(rewardOwned({ components: {}, stashRefs: [{ kind: 'component', refId: 19 }] }, drone), false); // exact item only
+  assert.equal(rewardOwned({ components: {}, stashRefs: [{ kind: 'weapon', refId: 12 }] }, drone), false);    // kind must match
+});
+
 test('rewardOwned: null active ship / null reward → not owned (drop shows on a first playthrough)', () => {
   assert.equal(rewardOwned(null, { kind: 'weapon', refId: 5 }), false);
   assert.equal(rewardOwned({ loadout: { mounts: [] } }, null), false);
