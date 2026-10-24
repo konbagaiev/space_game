@@ -75,7 +75,7 @@ Sizes: **S** ≤ ½ day, **M** ~1–2 days, **L** more.
 | A9 | Money: 3 units, 3 golds, 2 balance readouts on Loadout | drifted | player | S–M |
 | B1 | `buyItem` sells price-0 / `buyable:false` items via direct API | **fixed 2026-10-22** (`0fb8416`, §164) | server / economy | S |
 | B2 | `gameplay_sessions` missing from `--all` reset; new-player defaults ×3 | **fixed 2026-10-22** (`0fb8416`, §165) | ops | S |
-| B3 | Server `buildShip` matches by an id seed ships don't have | **fixed 2026-10-24** (`<commit>`, §168) | server authority | S–M |
+| B3 | Server `buildShip` matches by an id seed ships don't have | **fixed 2026-10-24** (`b1b5727`, §168) | server authority | S–M |
 | B4 | Dev fight flags applied in 5 places, already diverged | drifted | dev / netsim | M |
 | B5 | "Effective player build" in 5 places; `?record` drops skills | `?record` part **fixed 2026-10-24** (§166); `resolvePlayerBuild` consolidation open | replay | M |
 | B6 | Server room never passes `activeShip` → reward crate always drops | **fixed 2026-10-24** (§166) | netsim | S |
@@ -86,7 +86,7 @@ Sizes: **S** ≤ ½ day, **M** ~1–2 days, **L** more.
 | C5 | Level reward stated 3 times (drop / briefing grant / owned check) | sync risk | — | S–M |
 | C6 | Mission location "four-way invariant" only half tested | sync risk | — | S |
 | C7 | Shop-unlock triggers + hard-coded starter ids | **fixed 2026-10-24** (`6ad1a1a`) | — | S |
-| C8 | Catalog flattening + DB row mappers duplicated | **fixed 2026-10-24** (`<commit>`, §168) | — | M |
+| C8 | Catalog flattening + DB row mappers duplicated | **fixed 2026-10-24** (`b1b5727`, §168) | — | M |
 | C9 | Per-tick warp/repair/shield logic copied per ship kind | drifted (minor) | replay risk | S–M |
 | C10 | Hit handling + death events copied ~8× | sync risk + latent crash | — | M |
 | C11 | Netsim wire format written 3×; ghost entities hand-built | sync risk (tested) | — | S |
@@ -239,7 +239,7 @@ grant on `recordings/sessions/*` was added 2026-10-23.
 - **Answered (maintainer, 2026-10-22):** `--all` wipes `gameplay_sessions` AND deletes their S3 traces; the
   per-player reset keeps them.
 
-### B3. Server `buildShip` matches by an id the seed doesn't have — **fixed 2026-10-24** (`<commit>`, §168)
+### B3. Server `buildShip` matches by an id the seed doesn't have — **fixed 2026-10-24** (`b1b5727`, §168)
 
 _Fixed by [`2026-10-24-1926-ship-ids-catalog-builder.md`](2026-10-24-1926-ship-ids-catalog-builder.md) (explicit seed ship ids = prod's, `ON CONFLICT (id)` + per-boot `reconcileShipIds`, `buildShip` via `shipById`) — the evidence below is as of 2026-10-20._
 - `server/src/sim-host.js:65-89` matches `s.id === shipId`; its catalog comes straight from
@@ -346,7 +346,7 @@ at `db.js:445-451` while the starter ship lists them at `catalog_seed.js:463`. `
 comments at `catalog_seed.js:913`. Fix: derive/test `unlockShop` level == `SHOP_MIN_LEVEL`;
 `STARTER_WEAPON_ID`; read grab/shield ids from the starter ship.
 
-### C8. Catalog flattening and DB row mappers (M) — **fixed 2026-10-24** (`<commit>`, §168)
+### C8. Catalog flattening and DB row mappers (M) — **fixed 2026-10-24** (`b1b5727`, §168)
 
 _Fixed by [`2026-10-24-1926-ship-ids-catalog-builder.md`](2026-10-24-1926-ship-ids-catalog-builder.md) (`catalogFromRows` in `client/src/sim-core/catalog.js` used by both hosts; one row mapper per table in `db.js`, so stash rows carry `rarity`/`color`/model URLs; insert column lists left as is) — the evidence below is as of 2026-10-20._
 Flattening at `client/src/main.js:2259` and `server/src/sim-host.js:37-44`; row→object at

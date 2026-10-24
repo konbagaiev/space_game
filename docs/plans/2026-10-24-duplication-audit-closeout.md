@@ -109,7 +109,7 @@ scenario (grep `ch-cards` in `client/visual/scenarios/`).
 
 ## Phase 2 — Ship ids in the seed, one catalog builder (B3, C8)
 
-**Status:** done 2026-10-24 (`<commit>`, merge `<merge>`, run 2026-10-24-1926-ship-ids-catalog-builder), [plan](2026-10-24-1926-ship-ids-catalog-builder.md).
+**Status:** done 2026-10-24 (`b1b5727`, merge `5eab050`, run 2026-10-24-1926-ship-ids-catalog-builder), [plan](2026-10-24-1926-ship-ids-catalog-builder.md).
 
 Size M. **Risk: prod data.** Green tests + a fresh seed prove nothing here — prod's row ids can differ from a
 freshly-seeded DB (a known past failure mode). The ids must match what prod already stores.
