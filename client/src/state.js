@@ -125,11 +125,11 @@ export const setPieces = []; // combat-scene set-pieces { obj, update } — deco
 // 'entity|class|event' -> [sound keys] (several = e.g. random music tracks). Filled in bootstrap from /api/sounds.
 export const soundMap = new Map();
 
-// --- Catalog (DB-sourced; filled in bootstrap) ---
+// --- Catalog (DB-sourced; filled in place in bootstrap by sim-core/catalog.js catalogFromRows) ---
 export const CATALOG = {
   weapons: new Map(),    // id -> { id, name, type, ...stats }
   components: new Map(), // id -> { id, name, type, weight, ...stats }  (hulls + engines)
-  enemyShips: [],        // DB ship rows with type 'enemy' (used by spawnEnemy(role) / tests)
+  enemyShips: [],        // DB ship rows with type 'enemy', ordered by id (used by spawnEnemy(role) / tests)
   shipByName: new Map(), // name -> ship row (any type; the level's spawn pools reference these)
   level: null,           // the active level descriptor (phase/wave script)
   levelName: null,       // the active level's SEED NAME (level-N) — the trace level for session recording

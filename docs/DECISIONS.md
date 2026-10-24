@@ -7084,3 +7084,39 @@ Recorded here too, needing no entry of their own: C3 deleted the client's `sellL
 the resale rule is now the one `sellPrice` in `sim-core/shop-rules.js`; and C4 kept the flat
 `{experience, level, leveledUp, xpEarned}` fields on `POST /api/games` next to the new `progression`, because the
 itch build and already-open tabs read them.
+
+## 168. Ship ids are explicit and equal prod's; mismatching databases are reconciled every boot, not once
+
+**Date:** 2026-10-24. **Context:** duplication audit B3, C8
+([`2026-10-24-1926-ship-ids-catalog-builder.md`](plans/2026-10-24-1926-ship-ids-catalog-builder.md)). The seed's
+`SHIPS` rows had no `id`; the startup upsert keyed on `name`, so every database handed out its own sequence ids
+(prod 1/132/141/368…375/2329, a local dev DB 1..9 + 1337, a fresh test DB 1..10), and the server's
+`buildShip` — matching `s.id === shipId` against the seed — never matched and always fell back to the first
+player ship.
+
+**Decision.** Every seed ship carries an explicit `id` **equal to prod's**, the upsert keys `ON CONFLICT (id)`
+(with `name` in the update set), and `reconcileShipIds` (`db.js`) moves any database that disagrees onto the
+seed ids **on every boot**, before the upsert, in one transaction (park pattern of the levels migration,
+`player_ships` moved in lockstep with its FK dropped and re-added). `ships_id_seq` is then set to the max id.
+
+- **Seed ids 1..10 (a "clean" numbering)** — rejected: prod is the database with user data, and its ids would
+  then all have to move. Taking prod's numbers means zero prod writes (the reconcile is a no-op there) and only
+  local/test databases are renumbered.
+- **A `migrations_pg` one-shot** — rejected: worktrees share one local Postgres, and a server running older code
+  (name-keyed upsert, sequence ids) can insert a new seed ship under a sequence id after the one-shot ran. A
+  one-shot would never look again; the per-boot check costs one `SELECT` when nothing disagrees and self-heals.
+- **Evict every row that sits on a seed id under another name** — rejected: a seed RENAME would then park the
+  renamed row and insert a fresh row beside it, leaving every `player_ships` row on a frozen parked copy (for
+  the player ship, every player on stale stats). The eviction is conditional — only when the ship that
+  belongs at that id exists elsewhere — so a rename is an in-place `ON CONFLICT (id)` update.
+- **Keep each host's ship order** (server: seed-array order; browser: `/api` `ORDER BY id`) — rejected: the two
+  catalogs would differ. `catalogFromRows` sorts ships by id on both hosts. Nothing in the sim indexes
+  `enemyShips` (lookups are by name or unique role); the dev tools that do (`?bench` setup, `bakeBackdrop`,
+  `?tune`, a role-less `spawnEnemy()`) now spawn pirate gunner (132) as `enemyShips[0]` locally — prod already
+  had this order. Bench A/B stays comparable (both sides read the same DB) but not with older bench numbers.
+
+**Consequence.** A new ship takes the next unused id above 2329; never renumber an existing one. A stale prod
+snapshot is the one risk: if the deploy log ever shows a `[migrate] ships:` line on prod, prod's ids differ
+from what the seed was built from — stop and look. Rollback to an older image needs no data step (its
+name-keyed upsert updates the same rows in place). `levels` is the only other table with a `setval` —
+`weapons`/`components` have no sequence at all.

@@ -3,7 +3,7 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-10-24 (**Shared client/server contracts** — the skill list (`sim-core/skills.js`), the equipment slot lists and the sell rate (`sim-core/shop-rules.js`) and the weapon-type → fire-group map (`shop-slots.js`, derived into the server's `WEAPON_GROUP`; an unknown type is refused at `/equip` with 409, DECISIONS §167) each have ONE source; `POST /api/games` also returns the full `progression`, which the client adopts; the Character XP bar uses `liveProgress` like the HUD; the starter gun and grab/shield ids are read from the starter ship row (duplication audit C1/C2/C3/C4/C7). Earlier today: **Shop: engine and thruster lines say "Power"** — their raw catalog power no longer shares the "Accel"/"Turn" labels with the ship's resulting stats. Earlier today: **Drift-fix Phase 5** — `?record` captures skills via the shared `flownBuild()` (`replay.js`, audit B5); a netsim room is handed the account record so `ownsReward` works there (B6); a reward **in the stash** counts as owned like an equipped one (`stashRefs` on the active-ship record, DECISIONS §166) — selling it brings the L1/L2 crate back.) Previously: 2026-10-23 (**Docs sweep after drift-fix Phases 1–4** — Kinetic skill text corrected (+5% damage on every non-rocket weapon; no aim-assist); the netsim room's `activeShip` claim corrected (not passed — audit B6, fixed 2026-10-24) and `?record`'s missing skills noted (B5, fixed 2026-10-24); `s3:DeleteObject` on `recordings/sessions/*` now granted, so a prod `reset --all` can run.) Previously: 2026-10-22 (**Server economy guards** — the side-mission card's est. reward/XP is computed from the phases × ship catalog (≈3510 / ≈2750); `/buy` refuses price-0 and `buyable:false` rows (`isShopItem`, DECISIONS §164); `reset --all` deletes S3 session traces then truncates `gameplay_sessions` too, and without S3 creds refuses unless given `--no-s3` (§165); `NEW_PLAYER_DEFAULTS` is the one new-player baseline. Earlier today: **Loadout shows the ship you fly** — the stats bar reads the real build (`makePlayer`, skills included) and gains a **Top speed** stat; a skill spend rebuilds the ship at once; the Owned badge is a green pill; dead shop CSS removed; replay docs corrected — record URL, trace v4 shape, storage.) Previously: 2026-10-20 (**One launch gate** — Map Autopilot respects it, the can't-launch note shows once; `canLaunch()` in shop.js is the only copy of the predicate. Earlier today: **Nothing runs behind the base menu** — every way into the menu goes through `enterMenu()`, which stops the fight; launches leave through `leaveMenu()`; **Take off sits at one spot on every base stage** — its own full-width `#mainwin` grid row.) Previously: 2026-10-19 (**Mobility card text names what it does** — acceleration, turn rate, top-speed cap. Earlier today: **Take off centred on screen on Character/Craft.**) Previously: 2026-10-07 (**Server-run brawl measured on prod** — capacity and bandwidth numbers in the netsim section and `brawl-perf-findings.md` §6.) Previously: 2026-10-06 (**A server-run bot brawl (`?netbrawl=N`) and in-process server load metrics** — the same N v N fight simulated by a netsim room, the room's own step/snapshot/bytes/event-loop/CPU numbers on the card, in `perf_samples` (`srv`) and in a 10 s `evt: 'netsim-room'` log line; max 2 brawl rooms per process, 330 s backstop, 8 MB slow-link guard; `server/tools/brawl-capacity.mjs` for rooms-per-core; netsim aces now render (`ace: 1` descriptor). DECISIONS §161. Earlier today: **The brawl setup takes a typed bot count**; perf findings recorded in `docs/plans/2026-10-06-brawl-perf-findings.md`; brief for a server-run brawl in `docs/plans/2026-10-06-server-brawl-load-test.md`. 2026-10-05: **Battle sounds only from what is on screen; the radar is opaque** — DECISIONS §160. Earlier: **Double-sided ship materials draw in one pass on every tier** — the canopy glass was drawn twice per ship and re-ran three.js's program lookup each pass; −27 % render CPU at 50v50, no visible change, DECISIONS §159. Earlier: **The Sentinel pilot engages within 150 u of HIMSELF, turns and fights when chased to the arena edge (cornered), and stops on a still escort point instead of orbiting it** — wingman, duel aces and brawl bots alike, DECISIONS §158. Earlier: **The bot brawl fight is held over the home station** — a station `anchor` + 100 u leash per bot. 2026-10-04: **A bot brawl you can run on a phone (`?brawl`)** — N v N Sentinel bots over the home station, 60 s of wall time, per-window frame stats + a result card + `/api/perf` telemetry, DECISIONS §157. Also **the Sentinel pilot owns its reload stagger** — wingman and aces fire on one schedule from a private stream, `SENTINEL_PILOT` profile, DECISIONS §156. Before that, 2026-09-11: **The Sentinel pilot aims like a person, and a retreat actually leaves the fight.**
+**Updated:** 2026-10-24 (**Ship ids are fixed in the seed; one catalog builder** — every `SHIPS` row carries an explicit id equal to prod's (1, 132, 141, 368, 369, 371, 372, 374, 375, 2329), upserted `ON CONFLICT (id)`; `reconcileShipIds` moves a database that numbered them differently on every boot (no-op on prod) and `ships_id_seq` is set to the max id; the server's `buildShip` really matches `shipId`; both hosts flatten the catalog through `client/src/sim-core/catalog.js catalogFromRows` with ships id-ordered; stash rows carry `id/rarity/color/modelUrl/modelUrlHigh` (duplication audit B3, C8, DECISIONS §168). Earlier today: **Shared client/server contracts** — the skill list (`sim-core/skills.js`), the equipment slot lists and the sell rate (`sim-core/shop-rules.js`) and the weapon-type → fire-group map (`shop-slots.js`, derived into the server's `WEAPON_GROUP`; an unknown type is refused at `/equip` with 409, DECISIONS §167) each have ONE source; `POST /api/games` also returns the full `progression`, which the client adopts; the Character XP bar uses `liveProgress` like the HUD; the starter gun and grab/shield ids are read from the starter ship row (duplication audit C1/C2/C3/C4/C7). Earlier today: **Shop: engine and thruster lines say "Power"** — their raw catalog power no longer shares the "Accel"/"Turn" labels with the ship's resulting stats. Earlier today: **Drift-fix Phase 5** — `?record` captures skills via the shared `flownBuild()` (`replay.js`, audit B5); a netsim room is handed the account record so `ownsReward` works there (B6); a reward **in the stash** counts as owned like an equipped one (`stashRefs` on the active-ship record, DECISIONS §166) — selling it brings the L1/L2 crate back.) Previously: 2026-10-23 (**Docs sweep after drift-fix Phases 1–4** — Kinetic skill text corrected (+5% damage on every non-rocket weapon; no aim-assist); the netsim room's `activeShip` claim corrected (not passed — audit B6, fixed 2026-10-24) and `?record`'s missing skills noted (B5, fixed 2026-10-24); `s3:DeleteObject` on `recordings/sessions/*` now granted, so a prod `reset --all` can run.) Previously: 2026-10-22 (**Server economy guards** — the side-mission card's est. reward/XP is computed from the phases × ship catalog (≈3510 / ≈2750); `/buy` refuses price-0 and `buyable:false` rows (`isShopItem`, DECISIONS §164); `reset --all` deletes S3 session traces then truncates `gameplay_sessions` too, and without S3 creds refuses unless given `--no-s3` (§165); `NEW_PLAYER_DEFAULTS` is the one new-player baseline. Earlier today: **Loadout shows the ship you fly** — the stats bar reads the real build (`makePlayer`, skills included) and gains a **Top speed** stat; a skill spend rebuilds the ship at once; the Owned badge is a green pill; dead shop CSS removed; replay docs corrected — record URL, trace v4 shape, storage.) Previously: 2026-10-20 (**One launch gate** — Map Autopilot respects it, the can't-launch note shows once; `canLaunch()` in shop.js is the only copy of the predicate. Earlier today: **Nothing runs behind the base menu** — every way into the menu goes through `enterMenu()`, which stops the fight; launches leave through `leaveMenu()`; **Take off sits at one spot on every base stage** — its own full-width `#mainwin` grid row.) Previously: 2026-10-19 (**Mobility card text names what it does** — acceleration, turn rate, top-speed cap. Earlier today: **Take off centred on screen on Character/Craft.**) Previously: 2026-10-07 (**Server-run brawl measured on prod** — capacity and bandwidth numbers in the netsim section and `brawl-perf-findings.md` §6.) Previously: 2026-10-06 (**A server-run bot brawl (`?netbrawl=N`) and in-process server load metrics** — the same N v N fight simulated by a netsim room, the room's own step/snapshot/bytes/event-loop/CPU numbers on the card, in `perf_samples` (`srv`) and in a 10 s `evt: 'netsim-room'` log line; max 2 brawl rooms per process, 330 s backstop, 8 MB slow-link guard; `server/tools/brawl-capacity.mjs` for rooms-per-core; netsim aces now render (`ace: 1` descriptor). DECISIONS §161. Earlier today: **The brawl setup takes a typed bot count**; perf findings recorded in `docs/plans/2026-10-06-brawl-perf-findings.md`; brief for a server-run brawl in `docs/plans/2026-10-06-server-brawl-load-test.md`. 2026-10-05: **Battle sounds only from what is on screen; the radar is opaque** — DECISIONS §160. Earlier: **Double-sided ship materials draw in one pass on every tier** — the canopy glass was drawn twice per ship and re-ran three.js's program lookup each pass; −27 % render CPU at 50v50, no visible change, DECISIONS §159. Earlier: **The Sentinel pilot engages within 150 u of HIMSELF, turns and fights when chased to the arena edge (cornered), and stops on a still escort point instead of orbiting it** — wingman, duel aces and brawl bots alike, DECISIONS §158. Earlier: **The bot brawl fight is held over the home station** — a station `anchor` + 100 u leash per bot. 2026-10-04: **A bot brawl you can run on a phone (`?brawl`)** — N v N Sentinel bots over the home station, 60 s of wall time, per-window frame stats + a result card + `/api/perf` telemetry, DECISIONS §157. Also **the Sentinel pilot owns its reload stagger** — wingman and aces fire on one schedule from a private stream, `SENTINEL_PILOT` profile, DECISIONS §156. Before that, 2026-09-11: **The Sentinel pilot aims like a person, and a retreat actually leaves the fight.**
 `flySentinel` — the wingman AND every `?duel` ace, one shared constant block — now carries a tracking error
 on its PERCEIVED BEARING (a lag against the line-of-sight rate, a standing jitter, an acquisition kick), so
 the first shot at a new target misses a real hull ~18 % of the time (MEASURED, not derived) while a settled
@@ -902,6 +902,10 @@ tier** — a third axis, orthogonal to `role` (behaviour) and `class` (the SFX/s
 weapon id, its `group`, a lateral `offset` (side-by-side fire), a `delay` (staggered volley); a ship
 can mount several of the same weapon (the mini-boss has two rocket launchers). The player's active ship
 + its loadout/components overrides come from `player_ships` (see Backend).
+The catalog is flattened once, by **`client/src/sim-core/catalog.js` `catalogFromRows`** (the browser fills
+`CATALOG` in place from `/api`; the server's `sim-host.js buildCatalog` builds it from the seed); ships are
+**id-ordered on both hosts**, and `shipById(catalog, id)` is the one id lookup (`buildShip`, `?bench`,
+`?playback`). Ship ids are explicit in the seed and equal on every database (see Backend → Catalog tables).
 - **Components** (DB `components`, `type` `hull`/`engine`/`thruster`/`repair`/`grab`/`shield`; `weight` column + `stats`
   JSON): a **hull** has `{ durability (= maxHp), volume }`; an **engine** has `{ power → acceleration,
   maxSpeed, exhaust }`; a **thruster** has `{ power → maneuverability (turn rate) }`; a **repair drone**
@@ -3219,7 +3223,10 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
         under the near-top-down camera (`CAM_OFFSET 0,110,26`) — so Anchor X/Z is the placement control, Depth is
         layer separation. Final numbers are baked into the defaults. A **synthetic headless generator**
         (`window.__bench.bakeBackdrop` → `client/bench/gen-backdrop.mjs`, `npm run bench:backdrop`) is kept only
-        as a **bootstrap/fallback** so the runtime + tests work before a real recording exists.
+        as a **bootstrap/fallback** so the runtime + tests work before a real recording exists. It casts
+        `CATALOG.enemyShips[0..2]`, which is **id-ordered** (pirate gunner 132, advanced medium pirate 141,
+        Basic pirate ship 368 — the same on every DB since the ship ids were fixed, DECISIONS §168); the
+        committed clip is name-keyed, so this only matters on a re-bake.
       - Both authoring paths re-center via the shared pure helper **`recenterAndQuantize`** (in
         `ghost-battle-track.js`): it subtracts **ONE FIXED offset — the MEAN of the player's (slot-0) path over
         the whole track** — from every ship + bullet. Only a constant is removed, so the **player's real
@@ -3672,6 +3679,17 @@ first translation). See DECISIONS §10.
   `gameplay_sessions.level`, then restores the FK and sets the column default to 0. On a fresh database
   every statement is a no-op and the seed writes 0..4 directly. Pinned end-to-end by
   `levels_drift.test.js`, which builds a legacy-shaped DB and migrates it.
+  **Ship ids** are reconciled by **`reconcileShipIds(SHIPS)`** (`db.js`), which runs **on every boot, before
+  the ships upsert, with no ledger entry** (worktrees share one local Postgres, and a server on older code can
+  re-introduce a sequence-numbered ship — a per-boot check self-heals; DECISIONS §168). When every row already
+  sits on its seed id it is one `SELECT` and logs nothing. Otherwise, in one transaction: drop
+  `player_ships_ship_id_fkey`, park each mismatched row at `id + SHIP_PARK` (1 000 000) with `player_ships`
+  moving in lockstep, move each seed-named parked row to its seed id, re-add the FK, and log one
+  `[migrate] ships: renumbered …` line. A row is mismatched when it carries a seed name under another id, or
+  when it sits on seed id X under another name **and the ship that belongs at X exists elsewhere**. A seed
+  **rename** is therefore not a mismatch: the row keeps its id and its `player_ships`, and the
+  `ON CONFLICT (id)` upsert renames it in place. Parked rows with no seed name stay parked; the enemy prune
+  then deletes them (a non-seed player row would stay parked and is logged). Pinned by `ships_drift.test.js`.
 - **Game history & credits:** at the end of each run the client posts `{ credits, kills, durationMs, xp }`
   to `/api/games`; the server stores it (`games.credits`, renamed from `score` in migration 008) **and
   banks the earned credits** into `players.credits` (the persistent balance, default **1000** for new
@@ -3689,7 +3707,13 @@ first translation). See DECISIONS §10.
   enemy `xp`/`dodge` values live in `catalog_seed.js` `stats` (all enemies `dodge:0` for now), and level
   descriptors carry `xpReward` for the mission bonus.
 - **Catalog tables:** `ships` (player + enemies; `name`, `type`, `stats` JSON, `model_url` (combat),
-  `model_url_high` (hangar high-poly, nullable), `components` JSON ref `{hull,engine,thruster[,repair]}`),
+  `model_url_high` (hangar high-poly, nullable), `components` JSON ref `{hull,engine,thruster[,repair]}`;
+  **explicit ids written in the seed, equal to production's** — Basic player ship 1, pirate gunner 132,
+  advanced medium pirate 141, Basic pirate ship 368, basic rocket pirate 369, pirate mini boss 371, first
+  pirate boss 372, second pirate boss 374, advanced rocket pirate 375, pirate lancer 2329 — upserted
+  **`ON CONFLICT (id)`** (name included in the update set, so a rename updates in place) after
+  `reconcileShipIds`, then `setval('ships_id_seq', MAX(id))`; a new ship takes the next id above 2329, never
+  renumber one),
   `components` (`name`, `type`
   `hull`/`engine`/`thruster`/`repair`/`grab`, `weight`, **`price`**, `stats` JSON, **`rarity`**/**`color`**;
   stable ids) and `weapons`
@@ -3718,7 +3742,10 @@ first translation). See DECISIONS §10.
   catch-up and the `level-2` `replaceWeapon from`; the grab/shield boot backfills (DECISIONS §40) likewise use
   `STARTER_SHIP.components.grab` / `.shield` (29 / 31). `shared-contracts.test.js` pins all of it, plus
   `FACTORY_GATE === SIDE_MISSIONS_MIN_LEVEL`.
-  Datastore methods (server-authoritative + transactional): `getStash` (joined to the catalog),
+  Datastore methods (server-authoritative + transactional): `getStash` (joined to the catalog — each stash row
+  is `{kind, refId, qty, ...}` plus the SAME fields as its `/api` catalog row, `id`/`rarity`/`color`/
+  `modelUrl`/`modelUrlHigh` included: `getWeapons`/`getComponents`/`getShips` and `catalogItem` share one
+  column list + one row mapper per table, `weaponRow`/`componentRow`/`shipRow`),
   `buyItem` (price ≤ balance → deduct → qty++), `sellItem` (stash item — optional `qty`, sells `min(qty,
   owned)` and credits `qty × sellPrice(price)` (= `floor(price*0.75)`, shared `sim-core/shop-rules.js`); or an *optional* equipped item via a `slot`, single unit),
   `equipItem` (stash → active ship; component slots by `type`, weapons
@@ -4056,7 +4083,9 @@ first translation). See DECISIONS §10.
     `mulberry32` for back-compat. Two modes: **`?bench=record`** — a
     human plays and `window.__bench.stop()` downloads a JSON **trace** of the per-tick resolved input
     (`{ k:[KeyboardEvent.code], t:[heading,thrust]|null }`) + a `setup` (`shipId`, initial `spawns`,
-    `maintainEnemies` load-pin); **`?bench=replay`** — `window.__bench.replay(trace,{mode})` re-seeds the RNG,
+    `maintainEnemies` load-pin; the setup's spawns and the load-pin both spawn `CATALOG.enemyShips[0]`,
+    the lowest-id enemy — pirate gunner — since ships became id-ordered, DECISIONS §168, so A/B stays
+    comparable but not with bench numbers recorded before 2026-10-24); **`?bench=replay`** — `window.__bench.replay(trace,{mode})` re-seeds the RNG,
     `reset()`s to a clean fight, **sets `G.gameStarted=true`** (the launch flows never run headless, so
     without it every `update()` early-returns), and drives the trace through the exact per-frame work
     `animate()` does, timed into the same `update`/`dom`/`render` buckets (`mode:'full'`) or `update`-only
@@ -4259,7 +4288,8 @@ first translation). See DECISIONS §10.
   `PLAYER_SCOPED_TABLES` minus `gameplay_sessions` up front for clean data; catalog kept — not via
   `resetAllPlayers()`, which would touch S3 and the table `gameplay-sessions.test.js` fills in parallel). One file is the exception:
   `levels_drift.test.js` creates and drops its **own** database (`spacegame_test_drift`) so it can
-  re-number `levels` without racing the shared DB.
+  re-number `levels` without racing the shared DB; `ships_drift.test.js` does the same
+  (`spacegame_test_ships`) for `ships`.
 - **Graceful shutdown:** on `SIGTERM`/`SIGINT` the server stops accepting new connections and lets
   in-flight requests finish (`server.close()`) before exiting, with an 8 s hard cap so a hung request
   can't block exit forever (`server.js`). This drains the old container cleanly when it's removed
@@ -4480,7 +4510,9 @@ credit double, the XP bonus) and emits `win`; the overlay and the `bankRun`/`dep
 `stepSmokeTrail` runs *after* the drain — it rebuilds the instanced puff pool from `smoke[]`, so it must
 see this tick's puffs.
 
-**What lives in `sim-core/`:** `vec.js`, `consts.js` (including `SHIP_GROUP_SCALE`, `BULLET_PLANE_Y`,
+**What lives in `sim-core/`:** `vec.js`, **`catalog.js`** (`catalogFromRows` — the one flatten of catalog
+rows into `world.catalog`, used by the browser bootstrap and the server's `buildCatalog`, ships id-ordered;
+`shipById`; `emptyCatalog`), `consts.js` (including `SHIP_GROUP_SCALE`, `BULLET_PLANE_Y`,
 `SPAWN_GROW_TIME`, the soft boundary's `ARENA`/`OOB_WARN_DELAY`/`OOB_RETURN_TIME`, and `TICK_HZ`/`SIM_DT` —
 the fixed sim step both hosts must agree on or they are not running the same simulation, DECISIONS §118;
 `bench.js` re-exports it as `BENCH_DT`), `events.js`,
@@ -5369,6 +5401,19 @@ purpose, by removing auto-aim (DECISIONS §124), which changes where bullets go.
   Mounts the Express app on an ephemeral port against a `spacegame_test` Postgres DB recreated by
   `pretest` (`NODE_ENV=test`) — the real `spacegame` DB is untouched; SES uses its no-creds outbox.
   Run: `cd server && npm test`.
+- **Ship-id drift** — `server/src/ships_drift.test.js` (4): its own throwaway DB (`spacegame_test_ships`).
+  Rewinds the ships to a local dev DB's shape (player 1, enemies 2..10 in seed order, a stale enemy row
+  squatting seed id 368, sequence 1000) and asserts `migrate()` puts every ship on its seed id, prunes the
+  squatter, keeps the pilot's `player_ships` row joined to the player ship, re-adds the FK and leaves nothing
+  parked; the same with the player ship at 50 (the FK lockstep path); idempotence + a prod-drifted
+  sequence (2929) pulled back to 2329; and a seed **rename** (player ship 1, enemy 368) is renamed in place,
+  nothing moved or parked. **B3 / C8 guards:** `server/src/sim-host.test.js` (3) — every `buildCatalog` ship
+  has its integer seed id, `buildShip` resolves `shipId` to that exact ship even when a lower-id player row
+  would win the fallback, an unknown id still falls back; `client/src/sim-core/catalog.test.js` (6) —
+  `catalogFromRows` over the seed equals the old hand-written flatten (copied into the test) with
+  `enemyShips` id-sorted, component/ship rows are the seed objects (no clone), the input array is not
+  reordered, a refill leaves no stale entries, `shipById`; `server.test.js` `shop: unlocks…` — the stash row
+  carries the `/api/weapons` row's `id/rarity/color/modelUrl/modelUrlHigh`.
 - **Level-id drift** — `server/src/levels_drift.test.js` (2): runs against its own throwaway DB
   (`spacegame_test_drift`, created + dropped by the file, so `spacegame_test` is untouched), re-ids the
   levels to the production drift shape (1, 6, 7, 71, 564) while no player rows exist, then asserts the

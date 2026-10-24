@@ -19,6 +19,7 @@
 import { COMPONENTS, WEAPONS, SHIPS, LEVELS, MAPS } from './catalog_seed.js';
 import { enemyTotalFromPhases } from './enemy_total.js';
 import { createWorld, noopHost } from '../../client/src/sim-core/world.js';
+import { catalogFromRows, shipById } from '../../client/src/sim-core/catalog.js';
 import { makePlayer } from '../../client/src/sim-core/ship-entity.js';
 import { clearAndPlaceRun, startRun } from '../../client/src/sim-core/reset-world.js';
 import { seedSim } from '../../client/src/sim-core/sim-random.js';
@@ -30,18 +31,10 @@ import { withDuelRoom } from '../../client/src/sim-core/duel-config.js';
 import { BRAWL_LEVEL, BRAWL_SEED, withBrawlRoom, spawnBrawl, clampBrawlN } from '../../client/src/sim-core/brawl.js';
 
 // The catalog the client assembles from `/api` at boot (main.js), built here straight from the seed the
-// server would have served. Same shape, same keys — `world.catalog` is the only way the sim reaches it.
+// server would have served — through the same `catalogFromRows`, ships id-ordered on both. Same shape,
+// same keys — `world.catalog` is the only way the sim reaches it.
 export function buildCatalog(levelName = 'level-0') {
-  const catalog = { weapons: new Map(), components: new Map(), enemyShips: [], shipByName: new Map(), level: null, levelName: null };
-  for (const w of WEAPONS) {
-    catalog.weapons.set(w.id, {
-      id: w.id, name: w.name, type: w.type, price: w.price,
-      modelUrl: w.modelUrl, modelUrlHigh: w.modelUrlHigh, rarity: w.rarity, color: w.color, ...w.stats,
-    });
-  }
-  for (const c of COMPONENTS) catalog.components.set(c.id, c);
-  catalog.enemyShips = SHIPS.filter((s) => s.type === 'enemy');
-  for (const s of SHIPS) catalog.shipByName.set(s.name, s);
+  const catalog = catalogFromRows({ weapons: WEAPONS, components: COMPONENTS, ships: SHIPS });  // the ONE flatten (sim-core/catalog.js)
   const level = LEVELS.find((l) => l.name === levelName);
   if (!level) throw new Error(`no level "${levelName}" in catalog_seed.js`);
   // `enemyTotal` is stamped onto the descriptor by the server (enemy_total.js) before it is served, and the
@@ -66,8 +59,7 @@ export function stationFor(mapName) {
 // is what a trace recorded before those fields existed needs.
 export function buildShip(catalog, { shipId = null, loadout = null, components = null, skills = null,
                                      beam = false } = {}) {
-  let ship = null;
-  for (const s of catalog.shipByName.values()) if (s.id === shipId) { ship = s; break; }
+  let ship = shipById(catalog, shipId);   // seed ids are explicit (= every DB's), so this really matches
   if (!ship) for (const s of catalog.shipByName.values()) if (s.type === 'player') { ship = s; break; }
   if (!ship) throw new Error('catalog carries no player ship');
   // `?beam` (dev) is applied HERE, to the EFFECTIVE loadout, rather than to the account row in socket.js.

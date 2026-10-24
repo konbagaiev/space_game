@@ -1,6 +1,6 @@
 # Duplication audit — close-out (every remaining item)
 
-**Date:** 2026-10-24. **Status:** Phase 1 done; Phases 2–8 not started.
+**Date:** 2026-10-24. **Status:** Phases 1–2 done; Phases 3–8 not started.
 **Source:** [`2026-10-20-duplication-audit.md`](2026-10-20-duplication-audit.md) (ids A6–A9, B3–B5, C1–C17 refer
 to it; read the matching section there for the original evidence). The first five phases of the clean-up are
 done — [`2026-10-20-base-menu-state-and-drift-fixes.md`](2026-10-20-base-menu-state-and-drift-fixes.md) fixed
@@ -30,7 +30,7 @@ in the audit rather than inventing work.
   to the per-tick loop or hit/death logic also runs `36-sim-divergence`.
 - English in every file; the chat with the maintainer is in Russian. Keep `AskUserQuestion` questions to one
   short line and put explanations in the chat text (the question text renders unreadable for them).
-- Next DECISIONS number is **§167** (check the file's tail — parallel sessions may have taken it).
+- Next DECISIONS number is **§169** (check the file's tail — parallel sessions may have taken it).
 
 ---
 
@@ -109,6 +109,8 @@ scenario (grep `ch-cards` in `client/visual/scenarios/`).
 
 ## Phase 2 — Ship ids in the seed, one catalog builder (B3, C8)
 
+**Status:** done 2026-10-24 (`<commit>`, merge `<merge>`, run 2026-10-24-1926-ship-ids-catalog-builder), [plan](2026-10-24-1926-ship-ids-catalog-builder.md).
+
 Size M. **Risk: prod data.** Green tests + a fresh seed prove nothing here — prod's row ids can differ from a
 freshly-seeded DB (a known past failure mode). The ids must match what prod already stores.
 
@@ -122,8 +124,9 @@ harmless with one flyable hull, wrong the day a second ships.
    or `psql` against `shared_postgres` — `SELECT id, name FROM ships ORDER BY id`. Compare with a fresh local
    `spacegame_test`. Record both in the plan of the run.
 2. Give every `SHIPS` row a fixed `id` equal to prod's. Switch the ships upsert to `ON CONFLICT (id)` like
-   weapons/components (`db.js:386`, `:392`). Bump the sequence past the max id (same as the other tables do —
-   grep `setval` in `db.js`).
+   weapons/components (`db.js:386`, `:392`). Bump the sequence past the max id (`setval`, as `levels`
+   does — *correction 2026-10-24:* only `levels` calls `setval`; `weapons`/`components` are plain
+   `BIGINT PRIMARY KEY` with no sequence at all).
 3. **Decision (chosen):** if a local or prod row's id disagrees with the seed (a DB seeded in another order),
    the startup migration renames by name → id, once, logged. If that is not safe (FKs on `player_ships.ship_id`
    etc.), stop and ask the maintainer instead of guessing.
