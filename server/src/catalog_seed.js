@@ -631,6 +631,13 @@ export const SHIPS = [
   },
 ];
 
+// The new player's ship, and the gun it flies with. The shop unlock, its boot catch-up and the Level-2
+// Machine-Gun swap all name this gun; the grab/shield backfills (db.js) name its components. `find` = the
+// first `type: 'player'` row, the same one ensureDefaultShip picks (lowest id). The mounts live under
+// `stats.mounts` (a SHIPS row has no top-level `mounts`).
+export const STARTER_SHIP = SHIPS.find((s) => s.type === 'player');
+export const STARTER_WEAPON_ID = STARTER_SHIP.stats.mounts.find((m) => m.group === 'gun').weapon;
+
 // Every ship states its mass tier, and it must be a DECLARED class — a typo here would otherwise degrade
 // silently to the sizeScale fallback and nobody would see it. Fails at module load, i.e. at server boot and
 // in every test that touches the seed.
@@ -793,7 +800,7 @@ export const LEVELS = [
       briefing: {
         textKey: 'level.2.briefing',
         text: "That Machine Gun you pulled from the wreck is fitted, Sentinel — lighter trigger, and it'll knock rockets out of the air. And now that you're back at the station, the hangar's open to you: the shop is yours to use between missions — kit out before you push on. We've lost contact with our weapons factory, two sectors out, and every lane to it is crawling with pirates. Cut your way through and reach it — and watch the heavier one holding the door; it won't go down like the rest.",
-        actions: [{ type: 'replaceWeapon', from: 1, to: 5 }, { type: 'unlockShop' }], // MG swap + open the hangar shop (side missions unlock later, after "Level 3" — DECISIONS §91)
+        actions: [{ type: 'replaceWeapon', from: STARTER_WEAPON_ID, to: 5 }, { type: 'unlockShop' }], // MG swap + open the hangar shop (side missions unlock later, after "Level 3" — DECISIONS §91)
       },
       // What clears the mission. Stated as DATA so the rule lives in the simulation rather than in the
       // interface, and so a room and a headless referee reach it the same way the browser does — the
@@ -912,7 +919,7 @@ export const LEVELS = [
       briefing: {
         textKey: 'level.4.briefing',
         text: "Those ships that ran when the factory fell — we tracked their heading, and your job is to find where they're hiding. We counted a lot of heavy ships among the ones that fled, so rearm at the hangar and kit out accordingly. And you've been out here long enough now, Sentinel — command's opening the side-job board to you: take a few between missions to bank extra credits. Good hunting.",
-        actions: [], // text-only: the shop opened back on reaching "Level 2"; the side-mission board unlocks HERE by the name-based progress gate (`level-5`, DECISIONS §91/§96), no action needed
+        actions: [], // text-only: the shop opened back on reaching "Level 2"; the side-mission board unlocks HERE by the name-based progress gate (`level-4` = SIDE_MISSIONS_MIN_LEVEL, DECISIONS §91/§96), no action needed
       },
       // What clears the mission. Stated as DATA so the rule lives in the simulation rather than in the
       // interface, and so a room and a headless referee reach it the same way the browser does — the

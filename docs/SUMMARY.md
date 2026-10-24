@@ -3,7 +3,7 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-10-24 (**Shop: engine and thruster lines say "Power"** — their raw catalog power no longer shares the "Accel"/"Turn" labels with the ship's resulting stats. Earlier today: **Drift-fix Phase 5** — `?record` captures skills via the shared `flownBuild()` (`replay.js`, audit B5); a netsim room is handed the account record so `ownsReward` works there (B6); a reward **in the stash** counts as owned like an equipped one (`stashRefs` on the active-ship record, DECISIONS §166) — selling it brings the L1/L2 crate back.) Previously: 2026-10-23 (**Docs sweep after drift-fix Phases 1–4** — Kinetic skill text corrected (+5% damage on every non-rocket weapon; no aim-assist); the netsim room's `activeShip` claim corrected (not passed — audit B6, fixed 2026-10-24) and `?record`'s missing skills noted (B5, fixed 2026-10-24); `s3:DeleteObject` on `recordings/sessions/*` now granted, so a prod `reset --all` can run.) Previously: 2026-10-22 (**Server economy guards** — the side-mission card's est. reward/XP is computed from the phases × ship catalog (≈3510 / ≈2750); `/buy` refuses price-0 and `buyable:false` rows (`isShopItem`, DECISIONS §164); `reset --all` deletes S3 session traces then truncates `gameplay_sessions` too, and without S3 creds refuses unless given `--no-s3` (§165); `NEW_PLAYER_DEFAULTS` is the one new-player baseline. Earlier today: **Loadout shows the ship you fly** — the stats bar reads the real build (`makePlayer`, skills included) and gains a **Top speed** stat; a skill spend rebuilds the ship at once; the Owned badge is a green pill; dead shop CSS removed; replay docs corrected — record URL, trace v4 shape, storage.) Previously: 2026-10-20 (**One launch gate** — Map Autopilot respects it, the can't-launch note shows once; `canLaunch()` in shop.js is the only copy of the predicate. Earlier today: **Nothing runs behind the base menu** — every way into the menu goes through `enterMenu()`, which stops the fight; launches leave through `leaveMenu()`; **Take off sits at one spot on every base stage** — its own full-width `#mainwin` grid row.) Previously: 2026-10-19 (**Mobility card text names what it does** — acceleration, turn rate, top-speed cap. Earlier today: **Take off centred on screen on Character/Craft.**) Previously: 2026-10-07 (**Server-run brawl measured on prod** — capacity and bandwidth numbers in the netsim section and `brawl-perf-findings.md` §6.) Previously: 2026-10-06 (**A server-run bot brawl (`?netbrawl=N`) and in-process server load metrics** — the same N v N fight simulated by a netsim room, the room's own step/snapshot/bytes/event-loop/CPU numbers on the card, in `perf_samples` (`srv`) and in a 10 s `evt: 'netsim-room'` log line; max 2 brawl rooms per process, 330 s backstop, 8 MB slow-link guard; `server/tools/brawl-capacity.mjs` for rooms-per-core; netsim aces now render (`ace: 1` descriptor). DECISIONS §161. Earlier today: **The brawl setup takes a typed bot count**; perf findings recorded in `docs/plans/2026-10-06-brawl-perf-findings.md`; brief for a server-run brawl in `docs/plans/2026-10-06-server-brawl-load-test.md`. 2026-10-05: **Battle sounds only from what is on screen; the radar is opaque** — DECISIONS §160. Earlier: **Double-sided ship materials draw in one pass on every tier** — the canopy glass was drawn twice per ship and re-ran three.js's program lookup each pass; −27 % render CPU at 50v50, no visible change, DECISIONS §159. Earlier: **The Sentinel pilot engages within 150 u of HIMSELF, turns and fights when chased to the arena edge (cornered), and stops on a still escort point instead of orbiting it** — wingman, duel aces and brawl bots alike, DECISIONS §158. Earlier: **The bot brawl fight is held over the home station** — a station `anchor` + 100 u leash per bot. 2026-10-04: **A bot brawl you can run on a phone (`?brawl`)** — N v N Sentinel bots over the home station, 60 s of wall time, per-window frame stats + a result card + `/api/perf` telemetry, DECISIONS §157. Also **the Sentinel pilot owns its reload stagger** — wingman and aces fire on one schedule from a private stream, `SENTINEL_PILOT` profile, DECISIONS §156. Before that, 2026-09-11: **The Sentinel pilot aims like a person, and a retreat actually leaves the fight.**
+**Updated:** 2026-10-24 (**Shared client/server contracts** — the skill list (`sim-core/skills.js`), the equipment slot lists and the sell rate (`sim-core/shop-rules.js`) and the weapon-type → fire-group map (`shop-slots.js`, derived into the server's `WEAPON_GROUP`; an unknown type is refused at `/equip` with 409, DECISIONS §167) each have ONE source; `POST /api/games` also returns the full `progression`, which the client adopts; the Character XP bar uses `liveProgress` like the HUD; the starter gun and grab/shield ids are read from the starter ship row (duplication audit C1/C2/C3/C4/C7). Earlier today: **Shop: engine and thruster lines say "Power"** — their raw catalog power no longer shares the "Accel"/"Turn" labels with the ship's resulting stats. Earlier today: **Drift-fix Phase 5** — `?record` captures skills via the shared `flownBuild()` (`replay.js`, audit B5); a netsim room is handed the account record so `ownsReward` works there (B6); a reward **in the stash** counts as owned like an equipped one (`stashRefs` on the active-ship record, DECISIONS §166) — selling it brings the L1/L2 crate back.) Previously: 2026-10-23 (**Docs sweep after drift-fix Phases 1–4** — Kinetic skill text corrected (+5% damage on every non-rocket weapon; no aim-assist); the netsim room's `activeShip` claim corrected (not passed — audit B6, fixed 2026-10-24) and `?record`'s missing skills noted (B5, fixed 2026-10-24); `s3:DeleteObject` on `recordings/sessions/*` now granted, so a prod `reset --all` can run.) Previously: 2026-10-22 (**Server economy guards** — the side-mission card's est. reward/XP is computed from the phases × ship catalog (≈3510 / ≈2750); `/buy` refuses price-0 and `buyable:false` rows (`isShopItem`, DECISIONS §164); `reset --all` deletes S3 session traces then truncates `gameplay_sessions` too, and without S3 creds refuses unless given `--no-s3` (§165); `NEW_PLAYER_DEFAULTS` is the one new-player baseline. Earlier today: **Loadout shows the ship you fly** — the stats bar reads the real build (`makePlayer`, skills included) and gains a **Top speed** stat; a skill spend rebuilds the ship at once; the Owned badge is a green pill; dead shop CSS removed; replay docs corrected — record URL, trace v4 shape, storage.) Previously: 2026-10-20 (**One launch gate** — Map Autopilot respects it, the can't-launch note shows once; `canLaunch()` in shop.js is the only copy of the predicate. Earlier today: **Nothing runs behind the base menu** — every way into the menu goes through `enterMenu()`, which stops the fight; launches leave through `leaveMenu()`; **Take off sits at one spot on every base stage** — its own full-width `#mainwin` grid row.) Previously: 2026-10-19 (**Mobility card text names what it does** — acceleration, turn rate, top-speed cap. Earlier today: **Take off centred on screen on Character/Craft.**) Previously: 2026-10-07 (**Server-run brawl measured on prod** — capacity and bandwidth numbers in the netsim section and `brawl-perf-findings.md` §6.) Previously: 2026-10-06 (**A server-run bot brawl (`?netbrawl=N`) and in-process server load metrics** — the same N v N fight simulated by a netsim room, the room's own step/snapshot/bytes/event-loop/CPU numbers on the card, in `perf_samples` (`srv`) and in a 10 s `evt: 'netsim-room'` log line; max 2 brawl rooms per process, 330 s backstop, 8 MB slow-link guard; `server/tools/brawl-capacity.mjs` for rooms-per-core; netsim aces now render (`ace: 1` descriptor). DECISIONS §161. Earlier today: **The brawl setup takes a typed bot count**; perf findings recorded in `docs/plans/2026-10-06-brawl-perf-findings.md`; brief for a server-run brawl in `docs/plans/2026-10-06-server-brawl-load-test.md`. 2026-10-05: **Battle sounds only from what is on screen; the radar is opaque** — DECISIONS §160. Earlier: **Double-sided ship materials draw in one pass on every tier** — the canopy glass was drawn twice per ship and re-ran three.js's program lookup each pass; −27 % render CPU at 50v50, no visible change, DECISIONS §159. Earlier: **The Sentinel pilot engages within 150 u of HIMSELF, turns and fights when chased to the arena edge (cornered), and stops on a still escort point instead of orbiting it** — wingman, duel aces and brawl bots alike, DECISIONS §158. Earlier: **The bot brawl fight is held over the home station** — a station `anchor` + 100 u leash per bot. 2026-10-04: **A bot brawl you can run on a phone (`?brawl`)** — N v N Sentinel bots over the home station, 60 s of wall time, per-window frame stats + a result card + `/api/perf` telemetry, DECISIONS §157. Also **the Sentinel pilot owns its reload stagger** — wingman and aces fire on one schedule from a private stream, `SENTINEL_PILOT` profile, DECISIONS §156. Before that, 2026-09-11: **The Sentinel pilot aims like a person, and a retreat actually leaves the fight.**
 `flySentinel` — the wingman AND every `?duel` ace, one shared constant block — now carries a tracking error
 on its PERCEIVED BEARING (a lag against the line-of-sight rate, a standing jitter, an acquisition kick), so
 the first shot at a new target misses a real hull ~18 % of the time (MEASURED, not derived) while a settled
@@ -924,10 +924,11 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   - **Pirate/enemy parts are priced but not buyable.** Every enemy component/weapon carries a resale `price`
     (e.g. Scout engine 250, Pirate MG 300, Second-boss hull 2000) **plus** `stats.buyable: false`. ONE
     predicate decides "for sale": `isShopItem(price, stats)` (price > 0 AND not `buyable:false`) in
-    `client/src/sim-core/shop-rules.js`, imported by the shop list (`shop.js buyableNow` — hides them), the
+    `client/src/sim-core/shop-rules.js` (which also holds the shared `REQUIRED_SLOTS` / `COMPONENT_SLOTS` lists
+    and the resale rule `SELL_RATE` / `sellPrice`), imported by the shop list (`shop.js buyableNow` — hides them), the
     rarity classifier (`catalog_seed.js classifyRarity`) and the server's **`buyItem`, which refuses any other
     row with `403 { error: 'not for sale' }`** (price-0 boss parts included; DECISIONS §164, amending §40.6).
-    So looted enemy gear has real resale value (`sell = floor(price·0.75)`) — looted copies still deposit,
+    So looted enemy gear has real resale value (`sell = floor(price·0.75)`, `sellPrice` / `SELL_RATE` in shop-rules.js) — looted copies still deposit,
     sell and equip — without ever being purchasable. Player/starter/ladder items have no `buyable` key → shown.
   - **Player shop ladder** (priced; `docs/plans/economy-shop-v2.md`) adds buyable upgrades beyond the
     enemy/starter parts: **Heavy hull** (id 13: 200 hp / weight 50 / **6000** — the upgrade "ship": 2× HP for
@@ -1383,8 +1384,9 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   at 20 u, and escapes). It is
   **undodgeable** — the corridor *is* the dodge (RNG-free; DECISIONS §135) — and it cannot be shot down.
   It occupies the **primary gun slot** and fires on **Space**, so buying it means **giving up your rapid
-  gun**: the `gun` slot now accepts `bullet | beam` (`client/src/shop-slots.js`, mirrored server-side by
-  `WEAPON_GROUP` in `db.js`). The **Kinetic skill scales it** like every other non-rocket weapon
+  gun**: the `gun` slot now accepts `bullet | beam` (`client/src/shop-slots.js` `GROUP_WEAPON_TYPE`; the
+  server's `WEAPON_GROUP` in `db.js` is *derived* from it via `weaponGroupOf`, and `/equip` refuses a weapon
+  type no slot takes with `409 'no slot for this weapon type'` — DECISIONS §167). The **Kinetic skill scales it** like every other non-rocket weapon
   (`makePlayer` multiplies `power` by `kineticDmgMul`), and the skill card's generic "+X% damage" text
   needs no change. Its shop stat line reads exactly
   **`DMG 80 · Charge 1.0s · Arc ±2° · RoF 0.7/s · Range 100 · Weight 12`** — the RoF is
@@ -2237,7 +2239,9 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   credits (`bankRun` POSTs `xp` to `/api/games`). **Curve** (`server/src/progression.js`): cost to reach
   level *n* = `1000 + 500·(n−1)` (cumulative 1000/2500/4500/7000/…); **level and unspent skill points are
   DERIVED from `experience`, never stored**; one point per level. The five **skills** (per invested point,
-  rates in `components.js` `SKILL_RATES` → `skillEffects()`, baked into the player by `makePlayer` in
+  list = `client/src/sim-core/skills.js` `SKILLS` (+ `skillColumn` → `players.skill_*`), the ONE list the server
+  columns/defaults/spend whitelist, the tools and the Character cards read; rates in `components.js`
+  `SKILL_RATES` → `skillEffects()`, baked into the player by `makePlayer` in
   `sim-core/ship-entity.js`, which `buildPlayer` calls): **Kinetic** +5% damage for every non-rocket weapon
   (`kineticDmgMul` on each mounted weapon's `power` — kinetic, machine gun, cannon and beam alike; no aim
   effect) · **Rocket** +5% rocket damage & +5% rocket speed ·
@@ -2261,7 +2265,8 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   level and previews the run's unbanked XP live). **Levelling up happens LIVE, mid-fight**: the HUD rolls the
   banked progression forward by `G.earnedXp` through the curve every frame (`client/src/progression.js`
   `liveProgress` — the curve is **mirrored** client-side because the client can't import from `server/`, and
-  `client/src/progression.test.js` asserts the two copies agree; DECISIONS §103), so crossing a threshold
+  `client/src/progression.test.js` asserts the two copies agree; DECISIONS §103 — the Character screen's XP
+  bar makes the same `liveProgress(prog, G.earnedXp)` call, so the two bars cannot disagree), so crossing a threshold
   during combat immediately bumps the displayed level, empties the bar toward the next one, and fires the
   centered **"Level up"** toast that fades over 2s (`showLevelUp`). The toast is deduped by `announceLevel`
   (highest level already toasted this session), so `bankRun` — which still covers a level gained while the
@@ -2572,7 +2577,8 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   the whole level/mission, precomputed on the server from the descriptor's phase script and embedded as
   `descriptor.enemyTotal` (the client reads it in `levelRunner.start`; falls back to the bare kill count when
   the total is unknown, e.g. a level row not yet reseeded).
-  Banking posts `{ credits, kills, durationMs }` to `POST /api/games`, which returns the new balance.
+  Banking posts `{ credits, kills, durationMs, xp }` to `POST /api/games`, which returns the new balance plus
+  the full `progression` (the client adopts it as-is — `adoptBankedProgression` in `client/src/progression.js`).
 - **Shop & stash (the "spend" side)** — once the player **clears the first mission** (shop unlocks early,
   §90), the Main Window's **Loadout** section is the hub: the ship centered with its **slot chips around it**,
   a **right context panel** for the selected slot (equipped info + Remove, stash replacements → Install), and
@@ -2595,7 +2601,8 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   Every item block's head (name + badge + stat line) and model slot come from two helpers in `shop.js`,
   `itemHeader` / `itemModelSlot`. **Price shown per screen:** the **Shop** shows the **full buy price**;
   **Stash + Loadout** show the **resale value** (`floor(price*0.75)` — the amount the player actually gets on
-  sale, computed client-side via `sellLabel`/`SELL_RATE` to mirror the server), so the player reads "what I'd
+  sale, computed client-side via `sellPrice` from `sim-core/shop-rules.js`, the same function the server's
+  `/sell` uses), so the player reads "what I'd
   get" right on the card. **Card layout:** Loadout/Stash item cards stay on a **single row** everywhere (incl.
   phones); only the **Shop** stacks into two rows on touch (its long name + price + Buy don't share a phone
   line). Flows, all
@@ -2620,7 +2627,7 @@ can mount several of the same weapon (the mini-boss has two rocket launchers). T
   `docs/plans/economy-shop-v2.md`) anchored to the **corrected ~5800-credit first-shop budget** (the budget
   includes the ×2 victory bonus per level; a flawless run banks ~4280, retries push it toward ~5800 — so the
   Heavy hull at 6000 is the aspirational big buy — and since it is now **gated behind "Level 3"**, that
-  budget is what the player has *by the time it goes on sale*); sell = `floor(price*0.75)`, server-computed.
+  budget is what the player has *by the time it goes on sale*); sell = `floor(price*0.75)` (`SELL_RATE`, shop-rules.js), server-computed.
   The shop lists only `price > 0` **and** `buyable !== false` **and** gate-satisfied items, so the curated
   ladder shows and enemy parts (now priced for resale but `buyable:false`) don't. The **ship-with-slots-around-it** layout + the shop's
   **stats→3D-model→Buy detail card** are built (Slice C increments 1–2); collapsed-sections-per-type (vs the
@@ -3669,7 +3676,9 @@ first translation). See DECISIONS §10.
   to `/api/games`; the server stores it (`games.credits`, renamed from `score` in migration 008) **and
   banks the earned credits** into `players.credits` (the persistent balance, default **1000** for new
   players, no FK), returning the new balance. It **also banks `xp`** into `players.experience` and returns
-  `{ experience, level, leveledUp, xpEarned }` (level derived via `progression.js`).
+  `{ gameId, credits, experience, level, leveledUp, xpEarned, progression }` (level derived via
+  `progression.js`; `progression` is the same object active-ship returns — the flat fields are kept for old
+  clients such as an un-republished itch build).
   `registerPlayer`/active-ship also return `credits`; **active-ship additionally returns `progression`**
   `{ experience, level, xpIntoLevel, xpForNextLevel, skillPoints, skills{kinetic,rocket,shields,maneuver,mobility} }`.
 - **Character progression columns:** `players.experience` (banked XP) + five `skill_*` allocation columns
@@ -3701,13 +3710,17 @@ first translation). See DECISIONS §10.
   clearing the first flight — the shop opens early in the campaign now, not at its end), with the final-level
   advance still a fallback; it also **backfills the basic gun (id 1)** into the stash. A **boot
   backfill** (`migrate()`, idempotent) retroactively opens the shop + seeds the basic gun for existing
-  players who have reached the `level-3` row (threshold resolved by level NAME, not a raw id — DECISIONS
+  players who have reached the `SHOP_MIN_LEVEL` (`level-2`) row (threshold resolved by level NAME, not a raw id — DECISIONS
   §95). That backfill is **not** ledger-guarded: it re-runs on **every boot**, and it **never revokes** —
   players granted the shop early by the old raw-id comparison keep it. `replaceWeapon` briefing actions also
-  deposit the replaced weapon.
+  deposit the replaced weapon. The gun id is never typed: `STARTER_WEAPON_ID` (`catalog_seed.js`) is read
+  from the starter ship row (`STARTER_SHIP.stats.mounts`, the gun mount = 1) and feeds the unlock, its boot
+  catch-up and the `level-2` `replaceWeapon from`; the grab/shield boot backfills (DECISIONS §40) likewise use
+  `STARTER_SHIP.components.grab` / `.shield` (29 / 31). `shared-contracts.test.js` pins all of it, plus
+  `FACTORY_GATE === SIDE_MISSIONS_MIN_LEVEL`.
   Datastore methods (server-authoritative + transactional): `getStash` (joined to the catalog),
   `buyItem` (price ≤ balance → deduct → qty++), `sellItem` (stash item — optional `qty`, sells `min(qty,
-  owned)` and credits `qty × floor(price*0.75)`; or an *optional* equipped item via a `slot`, single unit),
+  owned)` and credits `qty × sellPrice(price)` (= `floor(price*0.75)`, shared `sim-core/shop-rules.js`); or an *optional* equipped item via a `slot`, single unit),
   `equipItem` (stash → active ship; component slots by `type`, weapons
   by fire-group; the displaced item returns to the stash), `unequipItem` (slot → stash; required slots allowed
   but then take-off is blocked), and **`depositLoot`** (bulk-adds a mission's collected loot items into the
@@ -4973,7 +4986,9 @@ gameplay changed across the whole refactor: the recorded Level-0 intro trace rep
 purpose, by removing auto-aim (DECISIONS §124), which changes where bullets go.
 - **Pure, Three.js-free logic (unit-tested):** the rules-bearing ones now live in `sim-core/` (see above);
   the rest stay in `src/`. `components.js` (catalogs + `deriveDrive` + `shipMass` +
-  `hitsToKill` + `repairTick`), `drops-config.js` (the loot-drop constants incl. the single `DROP_MODEL_URL`,
+  `hitsToKill` + `repairTick`), `sim-core/shop-rules.js` (`isShopItem`, `REQUIRED_SLOTS`, `COMPONENT_SLOTS`,
+  `SELL_RATE`, `sellPrice` — shared with the server), `sim-core/skills.js` (`SKILLS`, `skillColumn` — shared
+  with the server), `drops-config.js` (the loot-drop constants incl. the single `DROP_MODEL_URL`,
   plus the pure `pullSpeed`/`pickLoot` — import-free so `scripts/assets-check.mjs` + node tests can use it),
   `system-map.js` (star-system geometry + navigation: `bodyWorldPos`/`listBodies`/`SYSTEM`/`ANCHORS` +
   `capLifted`/`inActivityZone`/`arrivedAtPoint` — the replay-safety seam, unit-tested),
@@ -4982,7 +4997,7 @@ purpose, by removing auto-aim (DECISIONS §124), which changes where bullets go.
   `steering.js` (`headingToDir`, `shortestAngleDelta`, `steerToward`,
   `enemyThrustFactor`, `inForwardSector`), `i18n.js` (`t`, `resolveLanguage`, `normalizeLang`,
   `loadLanguage`), `audio.js` (procedural Web Audio engine + the pure settings helpers, engine
-  browser-only), `format.js` (`esc`/`cssColor`/`slotLabel`/`priceLabel`/`sellLabel`), and
+  browser-only), `format.js` (`esc`/`cssColor`/`slotLabel`/`priceLabel`), and
   `speed-field.js` (the backdrop speed field's defaults/ranges, `wrapDelta`/`wrapField`, the scatter
   helpers, `normalizeSpeedField` and the `?dev` tune load/save — the THREE side lives in `world.js`).
 - **Shared state & engine:** `state.js` (entity collections + `CATALOG` + input + the mutable `G` state
@@ -5052,7 +5067,8 @@ purpose, by removing auto-aim (DECISIONS §124), which changes where bullets go.
 - **Between-battles UI:** `shop.js` (hangar shop + stash + live ship-stats bar; a leaf the Main Window
   calls into), `shop-slots.js` (the pure slot↔weapon-type rule extracted out of `shop.js` so it can be
   unit-tested — `GROUP_WEAPON_TYPE` (`gun: ['bullet','beam']`, `rocket: ['rocket']`), `isWeaponSlot`,
-  `slotAcceptsWeaponType`; `shop.js` imports three, so nothing in it loads under `node --test`, and this
+  `slotAcceptsWeaponType`, `weaponGroupOf` (type → group or null; the server derives its `WEAPON_GROUP` from
+  this map and answers an unknown type with 409 at `/equip`); `shop.js` imports three, so nothing in it loads under `node --test`, and this
   rule is the player's only real path to the Charged beam), `shop-markers.js` (pure state logic for the gold "(new)" trail — gated refs, the whole
   bootstrap decision `primeSets` (first-sight baselines, the newly-gated-kind absorb, the prune that
   re-arms after a reset), the derived unseen sections; no DOM/storage, unit-tested by
@@ -5168,11 +5184,19 @@ purpose, by removing auto-aim (DECISIONS §124), which changes where bullets go.
   `RETURN_HOME_STALL_TICKS`, or never while the level is won), and
   **character progression** (`client/src/progression.test.js`: the client XP-curve mirror agrees with
   `server/src/progression.js` for every level/threshold checked, and `liveProgress` fills, crosses a
-  threshold, rolls through several levels in one haul, and no-ops without earned XP;
+  threshold, rolls through several levels in one haul, and no-ops without earned XP; `adoptBankedProgression` adopts a server `progression` over a local rebuild,
+  falls back to the curve for an old server, never mutates;
   `components.test.js` `skillEffects`: empty=identity / one step per point /
   independence / negative-clamp; `collision.test.js` dodge: `dodgeRoll` gates damage, is consulted **only
   after a geometric connect** (a miss never rolls → replay determinism), and skips shield absorption on an
   evade; `progression.test.js`: the curve, cumulative thresholds, derived level, and unspent-points math),
+  **shared client/server contracts** (`client/src/sim-core/skills.test.js`: every `SKILLS` key has an effect in
+  `skillEffects` and a card name/desc in `source.json` + `ru.json`; `shop-slots.test.js` / `shop-rules.test.js`:
+  `weaponGroupOf`, the slot lists, `sellPrice` recomputed from `SELL_RATE`; `server/src/shared-contracts.test.js`
+  (pure): `WEAPON_GROUP` = `GROUP_WEAPON_TYPE` inverted, every seed weapon type has a group, `unlockShop` sits on
+  `SHOP_MIN_LEVEL` only, `FACTORY_GATE === SIDE_MISSIONS_MIN_LEVEL`, `STARTER_WEAPON_ID` / the starter grab+shield
+  ids resolve to real rows; `server.test.js`: every skill has a column, a 0 default and is spendable, and
+  `POST /api/games`'s `progression` equals active-ship's),
   and **the bot brawl** (`sim-core/brawl.test.js`, against the real catalog: the layout is N v N with
   distinct non-zero ordinals, blue west / red east, the spectator ≥4900 u out and zero draws, the count
   clamped; the run is inert until armed and again once ended; two fresh 20v20 runs are identical for 60 sim-s

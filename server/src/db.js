@@ -6,15 +6,20 @@ import { levelFromXp, unspentSkillPoints } from './progression.js';
 // The mission gate constant, at module scope: `backfillResearchClear` (below) needs it OUTSIDE migrate(),
 // where the rest of the catalog arrives through a function-local dynamic import. Safe — catalog_seed.js
 // imports only ./enemy_total.js, so there is no cycle back into this module.
-import { RESEARCH_GATE } from './catalog_seed.js';
-// The one "is it for sale" rule (shared with the shop list and the rarity classifier).
-import { isShopItem } from '../../client/src/sim-core/shop-rules.js';
+// The starter ship row + its gun: the shop unlock, its boot catch-up and the grab/shield backfills name them.
+import { RESEARCH_GATE, STARTER_SHIP, STARTER_WEAPON_ID } from './catalog_seed.js';
+// Shared with the client: the one "is it for sale" rule (also the rarity classifier), the equipment slot
+// lists and the resale rule — ONE copy each (DECISIONS §136).
+import { isShopItem, REQUIRED_SLOTS, COMPONENT_SLOTS, sellPrice } from '../../client/src/sim-core/shop-rules.js';
+// Weapon type → fire group: the client's slot map, so the server routes exactly what the shop shows.
+import { GROUP_WEAPON_TYPE, weaponGroupOf } from '../../client/src/shop-slots.js';
 import { s3Configured, deleteTrace } from './s3.js';
+// The five skills — ONE list shared with the Character screen and the tools (client/src/sim-core/skills.js).
+import { SKILLS, skillColumn } from '../../client/src/sim-core/skills.js';
 
-// The five skills, mapped to their `players.skill_*` columns. The order is the card order in the
-// Character screen; the keys are the wire names used by the /skills/spend endpoint and the client.
-export const SKILLS = ['kinetic', 'rocket', 'shields', 'maneuver', 'mobility'];
-const SKILL_COL = Object.fromEntries(SKILLS.map((s) => [s, `skill_${s}`]));
+// Each skill mapped to its `players.skill_*` column. The keys are the wire names used by the /skills/spend
+// endpoint and the client; the list itself (and its order) lives in sim-core/skills.js.
+const SKILL_COL = Object.fromEntries(SKILLS.map((s) => [s, skillColumn(s)]));
 
 // DATABASE_URL in prod/CI; a local Postgres default so `npm start` / reset.js work with zero env.
 export const pool = new pg.Pool({
@@ -27,7 +32,7 @@ export const pool = new pg.Pool({
 // current_progress 0 = the intro, `level-0` (a level's id IS its 0-based campaign number, DECISIONS §95).
 export const NEW_PLAYER_DEFAULTS = Object.freeze({
   games_played: 0, current_progress: 0, credits: 1000, shop_unlocked: 0, active_mission_id: null,
-  experience: 0, skill_kinetic: 0, skill_rocket: 0, skill_shields: 0, skill_maneuver: 0, skill_mobility: 0,
+  experience: 0, ...Object.fromEntries(SKILLS.map((s) => [skillColumn(s), 0])),
 });
 export const NEW_PLAYER_LANGUAGE = 'en';
 const D = NEW_PLAYER_DEFAULTS;
@@ -346,11 +351,7 @@ export async function migrate() {
     -- LEVEL and unspent skill points are DERIVED from experience (progression.js), never stored — the
     -- source of truth is experience plus the per-skill allocations below (each column = points invested).
     ALTER TABLE players ADD COLUMN IF NOT EXISTS experience     INTEGER NOT NULL DEFAULT ${D.experience};
-    ALTER TABLE players ADD COLUMN IF NOT EXISTS skill_kinetic  INTEGER NOT NULL DEFAULT ${D.skill_kinetic};
-    ALTER TABLE players ADD COLUMN IF NOT EXISTS skill_rocket   INTEGER NOT NULL DEFAULT ${D.skill_rocket};
-    ALTER TABLE players ADD COLUMN IF NOT EXISTS skill_shields  INTEGER NOT NULL DEFAULT ${D.skill_shields};
-    ALTER TABLE players ADD COLUMN IF NOT EXISTS skill_maneuver INTEGER NOT NULL DEFAULT ${D.skill_maneuver};
-    ALTER TABLE players ADD COLUMN IF NOT EXISTS skill_mobility INTEGER NOT NULL DEFAULT ${D.skill_mobility};
+    ${SKILLS.map((s) => `ALTER TABLE players ADD COLUMN IF NOT EXISTS ${skillColumn(s)} INTEGER NOT NULL DEFAULT ${D[skillColumn(s)]};`).join('\n    ')}
 
     -- SFX (docs/plans/sound-classes-and-mapping.md): sounds = asset registry (key->url+gain);
     -- sound_map = class-based routing (entity, class, event) -> sound key. Rows seeded below.
@@ -456,17 +457,18 @@ export async function migrate() {
       'INSERT INTO sound_map (entity, class, event, sound_key) VALUES ($1, $2, $3, $4)',
       [m.entity, m.class, m.event, m.sound]);
   }
-  // Backfill the base Grab (component 29) onto existing players (DECISIONS §40; one-shot backfill, idempotent via the `NOT (components ? 'grab')` guard).
+  // Backfill the base Grab (the starter ship's grab, component 29) onto existing players (DECISIONS §40;
+  // one-shot backfill, idempotent via the `NOT (components ? 'grab')` guard).
   // Players created before the Grab feature whose ship has an explicit `components` override predating Grab
-  // have no 'grab' slot → grant them 29. NULL-components players inherit the reseeded ship default (grab:29),
-  // so they need no change. Idempotent: the `NOT (components ? 'grab')` guard skips rows already carrying it.
-  await pool.query(`UPDATE player_ships SET components = jsonb_set(components, '{grab}', '29'::jsonb)
-    WHERE components IS NOT NULL AND NOT (components ? 'grab')`);
-  // Backfill the Base shield (component 31) onto existing players. NEW
+  // have no 'grab' slot → grant them the starter grab. NULL-components players inherit the reseeded ship
+  // default, so they need no change. Idempotent: the `NOT (components ? 'grab')` guard skips rows already carrying it.
+  await pool.query(`UPDATE player_ships SET components = jsonb_set(components, '{grab}', to_jsonb($1::int))
+    WHERE components IS NOT NULL AND NOT (components ? 'grab')`, [STARTER_SHIP.components.grab]);
+  // Backfill the Base shield (the starter ship's shield, component 31) onto existing players. NEW
   // players get it from the reseeded ship default; players with an explicit pre-shield `components`
   // override don't. Idempotent: the `NOT (components ? 'shield')` guard skips rows already carrying it.
-  await pool.query(`UPDATE player_ships SET components = jsonb_set(components, '{shield}', '31'::jsonb)
-    WHERE components IS NOT NULL AND NOT (components ? 'shield')`);
+  await pool.query(`UPDATE player_ships SET components = jsonb_set(components, '{shield}', to_jsonb($1::int))
+    WHERE components IS NOT NULL AND NOT (components ? 'shield')`, [STARTER_SHIP.components.shield]);
   // Backfill: the hangar shop unlocks on reaching `level-2` (i.e. right after clearing the first playable
   // level, `level-1`), not at the final level (DECISIONS §90). Side missions are gated separately, on
   // reaching `level-4` (DECISIONS §91) — derived live, no backfill.
@@ -478,8 +480,8 @@ export async function migrate() {
   await pool.query(`UPDATE players SET shop_unlocked = 1
     WHERE shop_unlocked = 0 AND current_progress >= (SELECT id FROM levels WHERE name = $1)`, [SHOP_MIN_LEVEL]);
   await pool.query(`INSERT INTO stash (player_id, kind, ref_id, qty)
-    SELECT id, 'weapon', 1, 1 FROM players WHERE current_progress >= (SELECT id FROM levels WHERE name = $1)
-    ON CONFLICT (player_id, kind, ref_id) DO NOTHING`, [SHOP_MIN_LEVEL]);
+    SELECT id, 'weapon', $2, 1 FROM players WHERE current_progress >= (SELECT id FROM levels WHERE name = $1)
+    ON CONFLICT (player_id, kind, ref_id) DO NOTHING`, [SHOP_MIN_LEVEL, STARTER_WEAPON_ID]);
 
   console.log('[migrate] postgres schema ready');
   } finally {
@@ -695,19 +697,19 @@ export async function advanceProgress(playerId) {
     return { currentProgress: id, advanced: true, briefing };
   }
   // No next level → the player just cleared the final level: unlock the hangar shop (once) + backfill
-  // the basic gun (id 1) into the stash so it's owned.
+  // the starter gun (STARTER_WEAPON_ID) into the stash so it's owned.
   await unlockShop(playerId);
   return { currentProgress: cur.rows[0].current_progress, advanced: false, briefing: null };
 }
 
-// Flip shop_unlocked (idempotent) and seed the basic kinetic gun (weapon 1) into the stash the first
-// time, if it isn't already there.
+// Flip shop_unlocked (idempotent) and seed the starter gun (STARTER_WEAPON_ID — the starter ship's gun, the
+// Basic kinetic) into the stash the first time, if it isn't already there.
 async function unlockShop(playerId) {
   const { rows } = await pool.query('SELECT shop_unlocked FROM players WHERE id = $1', [playerId]);
   if (rows[0] && rows[0].shop_unlocked) return false;
   await pool.query('UPDATE players SET shop_unlocked = 1 WHERE id = $1', [playerId]);
-  await pool.query(`INSERT INTO stash (player_id, kind, ref_id, qty) VALUES ($1, 'weapon', 1, 1)
-    ON CONFLICT (player_id, kind, ref_id) DO NOTHING`, [playerId]);
+  await pool.query(`INSERT INTO stash (player_id, kind, ref_id, qty) VALUES ($1, 'weapon', $2, 1)
+    ON CONFLICT (player_id, kind, ref_id) DO NOTHING`, [playerId, STARTER_WEAPON_ID]);
   return true;
 }
 
@@ -781,6 +783,10 @@ export async function backfillResearchClear(db = pool) {
   return rowCount;
 }
 
+// Bank one finished run: credits + XP into the player's balance, one `games` row. Returns the new totals:
+// the flat { credits, experience, level, leveledUp, xpEarned } (kept for old clients — the itch build and
+// open tabs read them) PLUS `progression`, the exact object GET active-ship returns, which current clients
+// adopt as-is instead of rebuilding level/XP/points by hand (duplication audit C4).
 export async function recordGame(playerId, { credits = 0, kills = 0, durationMs = 0, xp = 0 } = {}) {
   const now = Date.now();
   await registerPlayer(playerId); // make sure the player exists
@@ -798,7 +804,8 @@ export async function recordGame(playerId, { credits = 0, kills = 0, durationMs 
   );
   const after = levelFromXp(upd.rows[0].experience);
   return { gameId: Number(ins.rows[0].id), credits: upd.rows[0].credits, experience: upd.rows[0].experience,
-    level: after.level, leveledUp: after.level > beforeLevel, xpEarned };
+    level: after.level, leveledUp: after.level > beforeLevel, xpEarned,
+    progression: await getProgression(playerId) };
 }
 
 // Record one product-funnel event (best-effort; type allowlisted by the API). data is JSONB context.
@@ -982,13 +989,15 @@ export async function reachedLevels(currentProgress, db = pool) {
 
 // ---------- Hangar shop + stash (docs/plans/hangar-shop.md) ----------
 // Server-authoritative + transactional (a checked-out client wraps each multi-step mutation).
-const REQUIRED_SLOTS = new Set(['hull', 'engine', 'thruster']);
-const COMPONENT_SLOTS = new Set(['hull', 'engine', 'thruster', 'repair', 'grab', 'shield']);
-// Catalog weapon type → the fire group it installs into. The `gun` group is the PRIMARY weapon slot: a
-// bullet OR a beam, never both (installing one replaces the other). Listed explicitly rather than left to
-// the `|| 'gun'` fallback below, because this map is where a reader looks for the routing.
-const WEAPON_GROUP = { bullet: 'gun', rocket: 'rocket', beam: 'gun' };
-const sellPrice = (price) => Math.floor((price | 0) * 0.75);
+// The shared slot lists (sim-core/shop-rules.js) as Sets for the gates below.
+const REQUIRED = new Set(REQUIRED_SLOTS);
+const COMPONENT = new Set(COMPONENT_SLOTS);
+// Catalog weapon type → the fire group it installs into, DERIVED from the client's GROUP_WEAPON_TYPE
+// (shop-slots.js) so the server routes exactly what the shop shows. The `gun` group is the PRIMARY weapon
+// slot: a bullet OR a beam, never both (installing one replaces the other). A type no group takes is refused
+// at /equip (409, DECISIONS §167). Exported for the shared-contracts guard test.
+export const WEAPON_GROUP = Object.fromEntries(
+  Object.entries(GROUP_WEAPON_TYPE).flatMap(([g, types]) => types.map((t) => [t, g])));
 
 async function catalogItem(kind, refId, client = pool) {
   if (kind === 'component') {
@@ -1100,11 +1109,11 @@ export async function sellItem(playerId, { kind, refId, slot, qty = 1 } = {}) {
 }
 
 async function sellEquipped(playerId, slot) {
-  if (REQUIRED_SLOTS.has(slot)) return { ok: false, status: 409, error: 'required slot can\'t be sold while equipped' };
+  if (REQUIRED.has(slot)) return { ok: false, status: 409, error: 'required slot can\'t be sold while equipped' };
   return withTx(async (client) => {
     const cfg = await activeLoadoutComponents(playerId, client);
     if (!cfg) return { ok: false, status: 404, error: 'no active ship' };
-    if (COMPONENT_SLOTS.has(slot)) {
+    if (COMPONENT.has(slot)) {
       const refId = cfg.components[slot];
       if (refId == null) return { ok: false, status: 409, error: 'slot is empty' };
       const item = await catalogItem('component', refId, client);
@@ -1140,7 +1149,8 @@ export async function equipItem(playerId, kind, refId) {
       if (prev != null) await depositStash(playerId, 'component', prev, 1, client); // displaced item → stash
       return { ok: true };
     }
-    const group = WEAPON_GROUP[item.type] || 'gun';
+    const group = weaponGroupOf(item.type);
+    if (!group) return { ok: false, status: 409, error: 'no slot for this weapon type' }; // DECISIONS §167 — before any write
     const idx = cfg.mounts.findIndex((m) => m.group === group);
     let prev = null;
     if (idx >= 0) { prev = cfg.mounts[idx].weapon; cfg.mounts[idx] = { ...cfg.mounts[idx], weapon: refId }; }
@@ -1157,7 +1167,7 @@ export async function unequipItem(playerId, slot) {
   return withTx(async (client) => {
     const cfg = await activeLoadoutComponents(playerId, client);
     if (!cfg) return { ok: false, status: 404, error: 'no active ship' };
-    if (COMPONENT_SLOTS.has(slot)) {
+    if (COMPONENT.has(slot)) {
       const refId = cfg.components[slot];
       if (refId == null) return { ok: false, status: 409, error: 'slot is empty' };
       delete cfg.components[slot];
@@ -1342,7 +1352,7 @@ export async function getActivePlayerShip(playerId) {
   if (!row) return null;
   const stats = row.stats, loadout = row.loadout || {};
   const components = row.ps_components ?? row.ship_components ?? {};
-  const missingRequired = [...REQUIRED_SLOTS].filter((s) => components[s] == null);
+  const missingRequired = REQUIRED_SLOTS.filter((s) => components[s] == null);
   const [progression, sideMissionsUnlocked, levelsReached, clearedMissions, stashRefs] = await Promise.all([
     getProgression(playerId),                                     // banked XP → derived level + skill points + allocations
     reachedLevel(reg.currentProgress, SIDE_MISSIONS_MIN_LEVEL),   // side-mission board gate (DECISIONS §91/§95)

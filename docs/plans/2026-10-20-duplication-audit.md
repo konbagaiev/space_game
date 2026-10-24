@@ -8,7 +8,9 @@ leak found the same day). **Still open:**
   2026-10-24 by Phase 5). **B6** fixed 2026-10-24.
 - **A6 remainder:** the staged text reveal is written twice; Welcome's Take off still launches straight
   into the fight (kept deliberately).
-- **Not planned yet:** A7, A8, A9, B3, B4, C1–C17.
+- **C1, C2, C3, C4, C7** fixed 2026-10-24 by Phase 1 of the close-out plan
+  ([`2026-10-24-1836-dedup-shared-contracts.md`](2026-10-24-1836-dedup-shared-contracts.md), DECISIONS §167).
+- **Not planned yet:** A7, A8, A9, B3, B4, C5, C6, C8–C17.
 
 **Close-out plan (2026-10-24):** every open item is scheduled in
 [`2026-10-24-duplication-audit-closeout.md`](2026-10-24-duplication-audit-closeout.md) (8 phases).
@@ -75,13 +77,13 @@ Sizes: **S** ≤ ½ day, **M** ~1–2 days, **L** more.
 | B4 | Dev fight flags applied in 5 places, already diverged | drifted | dev / netsim | M |
 | B5 | "Effective player build" in 5 places; `?record` drops skills | `?record` part **fixed 2026-10-24** (§166); `resolvePlayerBuild` consolidation open | replay | M |
 | B6 | Server room never passes `activeShip` → reward crate always drops | **fixed 2026-10-24** (§166) | netsim | S |
-| C1 | Skill list ×7 | sync risk | — | M |
-| C2 | Slot lists + weapon-group map, client vs server | sync risk | — | S |
-| C3 | Sell rate ×3, test checks a literal | sync risk | — | S |
-| C4 | Client hand-rebuilds the progression object after a game | sync risk | — | S |
+| C1 | Skill list ×7 | **fixed 2026-10-24** (`<commit>`) | — | M |
+| C2 | Slot lists + weapon-group map, client vs server | **fixed 2026-10-24** (`<commit>`, §167) | — | S |
+| C3 | Sell rate ×3, test checks a literal | **fixed 2026-10-24** (`<commit>`) | — | S |
+| C4 | Client hand-rebuilds the progression object after a game | **fixed 2026-10-24** (`<commit>`) | — | S |
 | C5 | Level reward stated 3 times (drop / briefing grant / owned check) | sync risk | — | S–M |
 | C6 | Mission location "four-way invariant" only half tested | sync risk | — | S |
-| C7 | Shop-unlock triggers + hard-coded starter ids | partly intentional | — | S |
+| C7 | Shop-unlock triggers + hard-coded starter ids | **fixed 2026-10-24** (`<commit>`) | — | S |
 | C8 | Catalog flattening + DB row mappers duplicated | sync risk (one drifted) | — | M |
 | C9 | Per-tick warp/repair/shield logic copied per ship kind | drifted (minor) | replay risk | S–M |
 | C10 | Hit handling + death events copied ~8× | sync risk + latent crash | — | M |
@@ -278,25 +280,37 @@ grant on `recordings/sessions/*` was added 2026-10-23.
 
 ## C. Sync risks (still agree, kept in step by hand)
 
-### C1. Skill list ×7 (M)
+### C1. Skill list ×7 (M) — **fixed 2026-10-24** (`<commit>`)
+
+_Fixed by [`2026-10-24-1836-dedup-shared-contracts.md`](2026-10-24-1836-dedup-shared-contracts.md) (one list in `client/src/sim-core/skills.js`) — the evidence below is as of 2026-10-20._
+
 `server/src/db.js:13` (`SKILLS`), `:331-335` (columns), `:516` (reset UPDATE),
 `server/tools/verify-sessions.mjs:74`, `client/src/mainwindow.js:185` (`SKILL_CARDS`),
 `client/src/sim-core/components.js:58-61` (`skillEffects`), i18n `ui.skill.<key>`. Nothing guards it.
 Fix: `sim-core/skills.js` exporting `SKILLS`; server imports it; generate column adds + reset SQL; test
 every key has a `skillEffects` entry and both i18n keys.
 
-### C2. Slot lists + weapon-group map (S)
+### C2. Slot lists + weapon-group map (S) — **fixed 2026-10-24** (`<commit>`)
+
+_Fixed by [`2026-10-24-1836-dedup-shared-contracts.md`](2026-10-24-1836-dedup-shared-contracts.md) (slot lists in `sim-core/shop-rules.js`, `WEAPON_GROUP` derived from `GROUP_WEAPON_TYPE`, unknown type → 409, DECISIONS §167) — the evidence below is as of 2026-10-20._
+
 Required/component slots `client/src/shop.js:29-30` (+ `:32-37`, `:146`, `:92`), `components.js:17`,
 `ship-entity.js:34` vs `server/src/db.js:910-911`; `client/src/shop-slots.js:13` (`GROUP_WEAPON_TYPE`)
 vs `db.js:915` (`WEAPON_GROUP`). Unknown weapon type: server falls back to `'gun'` (`db.js:1057`), client
 to no slot. Fix: `db.js` imports `shop-slots.js` and derives `WEAPON_GROUP`; slot lists move there.
 
-### C3. Sell rate ×3 (S)
+### C3. Sell rate ×3 (S) — **fixed 2026-10-24** (`<commit>`)
+
+_Fixed by [`2026-10-24-1836-dedup-shared-contracts.md`](2026-10-24-1836-dedup-shared-contracts.md) (`SELL_RATE` / `sellPrice` in `sim-core/shop-rules.js`) — the evidence below is as of 2026-10-20._
+
 `client/src/format.js:21-22` (`SELL_RATE`, `sellLabel` unused), `client/src/shop.js:503`,
 `server/src/db.js:916` (`sellPrice`); `format.test.js:36` asserts the literal 0.75. Fix: server sends
 `sellPrice` per stash row (or one exported rate), delete client copies.
 
-### C4. Client rebuilds progression by hand (S)
+### C4. Client rebuilds progression by hand (S) — **fixed 2026-10-24** (`<commit>`)
+
+_Fixed by [`2026-10-24-1836-dedup-shared-contracts.md`](2026-10-24-1836-dedup-shared-contracts.md) (`POST /api/games` returns `progression`; Character bar uses `liveProgress`) — the evidence below is as of 2026-10-20._
+
 `client/src/net.js:95-103` recomputes level/XP via `levelFromXp` and `skillPoints += gained` because
 `POST /api/games` (`db.js:725`) returns a flat `{experience, level, leveledUp}`; other endpoints return a
 full `progression`. `mainwindow.js:198` falls back to a literal 1000; a second XP bar on Character
@@ -317,7 +331,10 @@ it); `rewardOwned` resolves the slot from the catalog by `refId`.
 `system-map.test.js:317` checks anchors vs set-pieces only. Fix: `missions.js` imports `ANCHORS`, or a
 test that `objectForMission(m.id).pos` equals `m.descriptor.center` for every generated mission.
 
-### C7. Shop-unlock triggers and starter ids — partly intentional (§90/§95) (S)
+### C7. Shop-unlock triggers and starter ids — partly intentional (§90/§95) (S) — **fixed 2026-10-24** (`<commit>`)
+
+_Fixed by [`2026-10-24-1836-dedup-shared-contracts.md`](2026-10-24-1836-dedup-shared-contracts.md) (starter ids read from the starter ship row; the gates pinned by `shared-contracts.test.js`) — the evidence below is as of 2026-10-20._
+
 `unlockShop` on level-2 (`catalog_seed.js:794`), `SHOP_MIN_LEVEL` boot catch-up (`db.js:27`, `:460-464`),
 final-level fallback (`db.js:624`); weapon 1 granted at `db.js:463` and `:634`; grab 29 / shield 31 granted
 at `db.js:445-451` while the starter ship lists them at `catalog_seed.js:463`. `FACTORY_GATE`

@@ -46,6 +46,7 @@
 import { readFileSync } from 'node:fs';
 import { getTrace } from '../src/s3.js';
 import { verifyRun, classifyTrace } from '../src/seal/verify-run.js';
+import { SKILLS, skillColumn } from '../../client/src/sim-core/skills.js';
 
 const args = process.argv.slice(2);
 const flag = (name, fallback) => {
@@ -71,7 +72,7 @@ function sinceMs(s) {
 }
 
 // The skill columns, so "has this player ever had a point to spend" is one query.
-const SKILLS = ['skill_kinetic', 'skill_rocket', 'skill_shields', 'skill_maneuver', 'skill_mobility'];
+const SKILL_COLUMNS = SKILLS.map(skillColumn);
 
 // The rows to survey, from a dump file or from the database. Same shape either way; the file is filtered
 // here so `--since`/`--limit` mean the same thing in both modes.
@@ -84,7 +85,7 @@ async function loadRows(cutoff) {
   const { pool } = await import('../src/db.js');   // imported lazily: --rows must not need a database at all
   const { rows } = await pool.query(
     `SELECT s.id, s.player_id, s.level, s.outcome, s.kills, s.s3_key, s.created_at, s.game_version,
-            (${SKILLS.map((c) => `COALESCE(p.${c},0)`).join(' + ')}) AS spent
+            (${SKILL_COLUMNS.map((c) => `COALESCE(p.${c},0)`).join(' + ')}) AS spent
        FROM gameplay_sessions s
        LEFT JOIN players p ON p.id = s.player_id
       WHERE s.created_at >= $1

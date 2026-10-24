@@ -5,6 +5,28 @@
 
 ## 2026-10-24
 
+- **Shared client/server contracts (duplication audit C1, C2, C3, C4, C7)** — five facts that were written
+  separately on the client and the server, kept in step by hand, now have one source each
+  ([plan](plans/2026-10-24-1836-dedup-shared-contracts.md)). The **skill list** lives in
+  `client/src/sim-core/skills.js` (`SKILLS`, `skillColumn`); the server's `players.skill_*` columns, the
+  new-player defaults, the `/skills/spend` whitelist, `server/tools/verify-sessions.mjs` and the Character cards
+  all read it. The **equipment slot lists** (`REQUIRED_SLOTS`, `COMPONENT_SLOTS`) and the **sell rate**
+  (`SELL_RATE`, `sellPrice`) live in `client/src/sim-core/shop-rules.js`, used by `shop.js`, `shipMass` and the
+  server's gates and `/sell`; the unused `sellLabel` / `format.js SELL_RATE` are gone. The server's
+  `WEAPON_GROUP` is now **derived** from the client's `GROUP_WEAPON_TYPE` (new `weaponGroupOf` in
+  `shop-slots.js`), and `/equip` **refuses a weapon type no slot takes** with `409 'no slot for this weapon type'`
+  instead of silently installing it in the gun slot (DECISIONS §167; no such weapon exists today).
+  `POST /api/games` now also returns **`progression`** (the active-ship object), which the client adopts
+  (`adoptBankedProgression` in `client/src/progression.js`) instead of rebuilding level/XP/points by hand; the flat
+  fields stay for old clients. The **Character XP bar** uses `liveProgress(prog, G.earnedXp)`, the same call as the
+  HUD bar, so the two can't disagree (the literal `1000` fallback is gone). The **starter gun** and the
+  **grab/shield backfill ids** are read from the starter ship row (`STARTER_SHIP`, `STARTER_WEAPON_ID` in
+  `catalog_seed.js`) — still 1 / 29 / 31. **Guards:** new `client/src/sim-core/skills.test.js` (every skill has an
+  effect and card text in both locales) and pure `server/src/shared-contracts.test.js` (weapon map inversion, every
+  seed weapon type has a slot, `unlockShop` only on `SHOP_MIN_LEVEL`, `FACTORY_GATE === SIDE_MISSIONS_MIN_LEVEL`,
+  starter ids), plus server tests for skill columns/defaults/spend and the `/api/games` progression; the resale
+  tests now recompute from `sellPrice`. Each guard was seen to fail against the old code first.
+
 - **Shop: engine and thruster stat lines say "Power"** — an engine's line read "Accel" and a thruster's "Turn",
   the same labels the Loadout stats bar uses for the ship's resulting acceleration and turn rate (power ÷ mass,
   skills applied), so two different numbers shared one name. Both item lines now show their raw catalog

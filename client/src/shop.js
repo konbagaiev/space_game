@@ -3,7 +3,7 @@
 // shows the delta vs the previous config. The server stays authoritative — every action posts to an
 // endpoint and re-renders from the response. A leaf module: the Main Window calls in (openBay/showBayView/
 // canLaunch/updateTakeoffGate/renderShipStatsBar/deriveShipStats); nothing here calls back out into the UI.
-import { esc, slotLabel, priceLabel, SELL_RATE } from './format.js';
+import { esc, slotLabel, priceLabel } from './format.js';
 import { G, CATALOG, world } from './state.js';
 import { rebuildActiveShip } from './ship-build.js';
 import { makePlayer } from './sim-core/ship-entity.js';
@@ -16,7 +16,7 @@ import { shipModelCfg } from './ship-factory.js';
 import { buildModelViewer, setViewerModel, startViewer, stopViewer, resizeViewer, disposeViewer, itemModelCfg, setTopDownView, enableOrbit } from './model-viewer.js';
 import { gatedRefs, hasNew, prune, primeSets, unseenSections, unseenItems, refOf, absorbRefs, GATE_KINDS, LEGACY_GATE_KINDS } from './shop-markers.js';
 import { GROUP_WEAPON_TYPE, slotAcceptsWeaponType } from './shop-slots.js';
-import { isShopItem } from './sim-core/shop-rules.js';
+import { isShopItem, REQUIRED_SLOTS, COMPONENT_SLOTS, sellPrice } from './sim-core/shop-rules.js'; // shared with the server (DECISIONS §136)
 
 let shopData = null;       // { credits, shopUnlocked, stash, activeShip } — last server state
 let panelMode = 'slot';   // right context panel: 'slot' (selected-slot detail) | 'shop' (the shop)
@@ -28,8 +28,6 @@ let shopBusy = false;     // guard against double-submits
 let lastShipStats = null; // previous ship-stats snapshot (for the delta arrows)
 let loadoutViewer = null; // 3D viewer for the centered ship (#loadout-ship), built lazily
 let shopModelViewer = null; // 3D viewer for the shop detail card's item model (#shop-model)
-const REQUIRED_SLOTS = ['hull', 'engine', 'thruster']; // can't be empty at take-off
-const COMPONENT_SLOTS = ['hull', 'engine', 'thruster', 'repair', 'grab', 'shield'];
 // Where each slot chip sits around the centered ship (percent of #loadout-center; translate -50%,-50%).
 const SLOT_LAYOUT = {
   gun:      { top: '12%', left: '30%' }, rocket:   { top: '12%', left: '70%' }, // weapons up front
@@ -507,11 +505,11 @@ async function shopAction(path, body) {
 }
 
 // ---- Sell confirmation + quantity (docs/plans/2026-08-09-sell-confirm-quantity.md) ----
-// Selling stash gear now goes through a confirm modal that shows the sale price (75% of catalog, mirrored
-// via SELL_RATE) and, when the stash holds more than one, a slider + number to choose how many to sell.
+// Selling stash gear now goes through a confirm modal that shows the sale price (75% of catalog, via
+// `sellPrice` — the same function the server's /sell uses) and, when the stash holds more than one, a
+// slider + number to choose how many to sell.
 let pendingSell = null; // { kind, refId, max, unit } while the modal is open
 const sellEl = (id) => document.getElementById(id);
-const sellUnit = (price) => Math.floor((price || 0) * SELL_RATE); // per-item resale (mirrors server sellPrice)
 function sellQtyClamped(v) { return Math.max(1, Math.min(pendingSell ? pendingSell.max : 1, parseInt(v, 10) || 1)); }
 function refreshSellTotal() {
   if (!pendingSell) return;
@@ -525,7 +523,7 @@ function syncSellQty(from) { // keep the slider + number field in lockstep, clam
 function openSellConfirm(kind, refId) {
   const row = ((shopData && shopData.stash) || []).find((s) => s.kind === kind && s.refId === refId);
   if (!row) return; // sold out from under us → no-op
-  pendingSell = { kind, refId, max: row.qty, unit: sellUnit(row.price) };
+  pendingSell = { kind, refId, max: row.qty, unit: sellPrice(row.price) };
   sellEl('sell-item-name').textContent = row.name;
   const multi = row.qty > 1;
   sellEl('sell-qty-row').style.display = multi ? '' : 'none';

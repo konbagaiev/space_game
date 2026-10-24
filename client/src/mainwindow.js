@@ -18,6 +18,8 @@ import { API_BASE } from './api-base.js';
 import { esc } from './format.js';
 import { rebuildActiveShip, flushActiveShipRebuild } from './ship-build.js'; // a skill spend rebuilds the flown ship (menu-only; deferred otherwise)
 import { SKILL_RATES } from './sim-core/components.js'; // per-point skill rates → Character-card effect text (single source)
+import { SKILLS } from './sim-core/skills.js'; // the five skills — card order = the server's skill columns (single source)
+import { liveProgress } from './progression.js'; // the Character XP bar previews unbanked XP exactly like the HUD bar
 import { reset, levelRunner, refreshMusic, engagePointAutopilot, setPaused } from './sim.js';
 import { runCenter } from './sim-core/level-sim.js'; // where the current level fights (0,0 unless it names a centre)
 import { mountSystemNav, showStartMissionPrompt, showDockPrompt, objectForMission } from './systemmap-ui.js';
@@ -212,7 +214,6 @@ function renderStub(which) {
 // ---- Character screen (docs/plans/2026-08-09-character-progression.md) ----
 // Level + XP bar + unspent skill points, then the five skill cards. Effect NUMBERS come from
 // components.js SKILL_RATES (single source shared with the sim); the "+" buttons POST /skills/spend.
-const SKILL_CARDS = ['kinetic', 'rocket', 'shields', 'maneuver', 'mobility']; // card order = server SKILLS order
 // The interpolation params for the localized card descriptions (percent rates are stored as fractions).
 function skillDescParams() {
   return {
@@ -225,18 +226,20 @@ function skillDescParams() {
 function renderCharacter() {
   const host = document.getElementById('mw-character');
   if (!host) return;
-  const prog = (G.activeShip && G.activeShip.progression)
-    || { level: 0, xpIntoLevel: 0, xpForNextLevel: 1000, skillPoints: 0, skills: {} };
+  const prog = (G.activeShip && G.activeShip.progression) || { level: 0, xpIntoLevel: 0, skillPoints: 0, skills: {} };
+  // Level + bar via the SAME call the in-flight HUD bar makes (hud.js updateProgressionHud), so the two can
+  // never disagree — including while a bank is in flight or failed and G.earnedXp is still unbanked.
+  const live = liveProgress(prog, G.earnedXp);
   const p = skillDescParams();
-  const pct = prog.xpForNextLevel > 0 ? Math.max(0, Math.min(100, Math.round(100 * prog.xpIntoLevel / prog.xpForNextLevel))) : 0;
+  const pct = Math.max(0, Math.min(100, Math.round(100 * live.into / (live.span || 1))));
   const header = `<div id="ch-head">
-    <div class="ch-level"><span class="ch-level-num">${esc(t('ui.character.level', { level: prog.level }))}</span>
+    <div class="ch-level"><span class="ch-level-num">${esc(t('ui.character.level', { level: live.level }))}</span>
       <span class="ch-points${prog.skillPoints > 0 ? ' has' : ''}">${esc(t('ui.character.points', { points: prog.skillPoints }))}</span></div>
     <div class="ch-xpbar"><div class="ch-xpfill" style="width:${pct}%"></div>
-      <span class="ch-xptext">${esc(t('ui.character.xp', { into: prog.xpIntoLevel, span: prog.xpForNextLevel }))}</span></div>
+      <span class="ch-xptext">${esc(t('ui.character.xp', { into: Math.round(live.into), span: live.span }))}</span></div>
   </div>`;
   const canSpend = prog.skillPoints > 0;
-  const cards = SKILL_CARDS.map((key) => {
+  const cards = SKILLS.map((key) => {
     const lvl = (prog.skills && prog.skills[key]) || 0;
     const plus = `<button class="ch-plus" data-skill="${esc(key)}"${canSpend ? '' : ' disabled'}>+</button>`;
     return `<div class="skill-card">
