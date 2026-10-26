@@ -4,6 +4,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { generateMissions, expectedRun, round10 } from './missions.js';
 import { SHIPS } from './catalog_seed.js';
+import { readFileSync } from 'node:fs';
+import { objectForMission, activityZoneCenters } from '../../client/src/sim-core/system-map.js';
 
 // An independent re-computation: expected kills of each ship per phase (total × chance / Σchance), then
 // credits/XP read the way the live enemy entity reads them (ship-entity.js: reward || 0, xp || 0).
@@ -58,4 +60,25 @@ test('expectedRun throws on a pool ship that is not in the catalog', () => {
 
 test('expectedRun skips phases without a spawn (e.g. the victory event)', () => {
   assert.deepEqual(expectedRun([{ name: 'victory', event: 'win' }], SHIPS), { credits: 0, xp: 0 });
+});
+
+// Duplication audit C6: the side-mission centre is the host object's anchor — one source (ANCHORS), so the
+// mission board, the map marker, the roam activity zone and the fight can never disagree on where a mission is.
+test('every side mission fights at its host object, inside a roam activity zone', () => {
+  const zones = activityZoneCenters();
+  const missions = generateMissions();
+  assert.equal(missions.length, 3);
+  for (const m of missions) {
+    const host = objectForMission(m.id);
+    assert.ok(host, `${m.id} has a host object on the system map`);
+    assert.deepEqual(m.descriptor.center, { x: host.pos.x, z: host.pos.z }, `${m.id} centre == host pos`);
+    assert.ok(zones.some((z) => z.x === m.descriptor.center.x && z.z === m.descriptor.center.z),
+      `${m.id} centre is an activity-zone centre`);
+  }
+});
+
+test('missions.js takes its centres from ANCHORS, not literals', () => {
+  const src = readFileSync(new URL('./missions.js', import.meta.url), 'utf8');
+  assert.match(src, /import \{[^}]*\bANCHORS\b[^}]*\} from '\.\.\/\.\.\/client\/src\/sim-core\/system-map\.js'/);
+  assert.doesNotMatch(src, /center:\s*\{\s*x:\s*-?\d/, 'no numeric literal centre');
 });

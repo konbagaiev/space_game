@@ -107,11 +107,14 @@ test('rewardOwned: L1 weapon reward is owned iff a mount references its refId', 
   assert.equal(rewardOwned({ ship: { stats: { mounts: [{ weapon: 5 }] } } }, reward), true); // falls back to ship.stats.mounts
 });
 
-test('rewardOwned: L2 component reward is owned iff the repair slot is filled', () => {
-  const reward = { kind: 'component', refId: 12 };
-  assert.equal(rewardOwned({ components: { repair: 12 } }, reward), true);   // repair installed → owned
-  assert.equal(rewardOwned({ components: {} }, reward), false);              // empty repair slot → not owned
-  assert.equal(rewardOwned({ components: { repair: null } }, reward), false);
+test('rewardOwned: a component reward is owned iff some slot holds exactly its id', () => {
+  const drone = { kind: 'component', refId: 12 };
+  assert.equal(rewardOwned({ components: { repair: 12 } }, drone), true);   // the drone installed → owned
+  assert.equal(rewardOwned({ components: {} }, drone), false);              // empty slots → not owned
+  assert.equal(rewardOwned({ components: { repair: null } }, drone), false);
+  assert.equal(rewardOwned({ components: { repair: 19 } }, drone), false); // Repair drone II is not drone 12 (DECISIONS §169)
+  assert.equal(rewardOwned({ components: { engine: 7 } }, { kind: 'component', refId: 7 }), true); // any slot counts
+  assert.equal(rewardOwned({ ship: { components: { repair: 12 } } }, drone), true); // falls back to ship.components
 });
 
 test('rewardOwned: a reward in the stash counts as owned; sold (absent) does not', () => {
