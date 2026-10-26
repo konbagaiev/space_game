@@ -85,8 +85,8 @@ Sizes: **S** ≤ ½ day, **M** ~1–2 days, **L** more.
 | C2 | Slot lists + weapon-group map, client vs server | **fixed 2026-10-24** (`6ad1a1a`, §167) | — | S |
 | C3 | Sell rate ×3, test checks a literal | **fixed 2026-10-24** (`6ad1a1a`) | — | S |
 | C4 | Client hand-rebuilds the progression object after a game | **fixed 2026-10-24** (`6ad1a1a`) | — | S |
-| C5 | Level reward stated 3 times (drop / briefing grant / owned check) | **fixed 2026-10-26** (`<commit>`, §169) | — | S–M |
-| C6 | Mission location "four-way invariant" only half tested | **fixed 2026-10-26** (`<commit>`) | — | S |
+| C5 | Level reward stated 3 times (drop / briefing grant / owned check) | **fixed 2026-10-26** (`583ab21`, §169) | — | S–M |
+| C6 | Mission location "four-way invariant" only half tested | **fixed 2026-10-26** (`583ab21`) | — | S |
 | C7 | Shop-unlock triggers + hard-coded starter ids | **fixed 2026-10-24** (`6ad1a1a`) | — | S |
 | C8 | Catalog flattening + DB row mappers duplicated | **fixed 2026-10-24** (`b1b5727`, §168) | — | M |
 | C9 | Per-tick warp/repair/shield logic copied per ship kind | drifted (minor) | replay risk | S–M |

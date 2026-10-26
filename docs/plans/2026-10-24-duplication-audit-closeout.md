@@ -154,7 +154,7 @@ the sim). Deploy note: the migration runs at server start on prod — watch the 
 
 ## Phase 3 — Level reward and mission location as single sources (C5, C6)
 
-**Status:** done 2026-10-26 (`<commit>`, merge `<merge>`, run 2026-10-26-1616-reward-and-mission-anchors), [plan](2026-10-26-1616-reward-and-mission-anchors.md).
+**Status:** done 2026-10-26 (`583ab21`, merge `1bf5d3d`, run 2026-10-26-1616-reward-and-mission-anchors), [plan](2026-10-26-1616-reward-and-mission-anchors.md).
 Step 1 below was superseded by the maintainer's call: a component reward is owned by its **exact id** in any
 slot or the stash — no catalog lookup, no `slot` on `lastKillDrop` (DECISIONS §169).
 
