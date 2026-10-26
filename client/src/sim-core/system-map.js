@@ -220,9 +220,10 @@ export function maxBodyCoord() {
   return SYSTEM.planets.reduce((m, p) => Math.max(m, BASE.orbitR + p.orbitR), BASE.orbitR);
 }
 
-// Fixed anchored world coords near the base planet. The FOUR-WAY INVARIANT (see the plan / missions.js):
-// map marker pos == catalog_seed.js `home-system` set-piece pos == missions.js center == activity zone —
-// all identical (x,z) per body. Changing one WITHOUT the others desyncs spawns / the zone / the map / the fight.
+// Fixed anchored world coords near the base planet — the single source of each site's (x,z): the map marker
+// reads it, server/src/missions.js reads its side-mission centres from here, and activityZoneCenters() lists
+// it. The catalog_seed.js `home-system` set-piece pos must match (pinned in system-map.test.js; the freighter
+// renders +50 z ahead). Moving an anchor moves the marker, the zone and the fight together.
 export const ANCHORS = {
   base:    { x: -10,  z: -10 }, // base station (return-to-base dock), near the origin
   science: { x: 928,  z: 0 },   // research/science station — star-ward, 2x its old distance from planet 2
@@ -334,7 +335,7 @@ export function systemRadius(tNow = Date.now()) {
 }
 
 // The system's permanent activity zones — the base plus every fixed side-mission site (science, mining,
-// freighter), i.e. the fourth side of the four-way invariant in server/src/missions.js. The caller adds the
+// freighter); server/src/missions.js reads its centres from the same ANCHORS. The caller adds the
 // ACTIVE mission's own center (if any) on top. Read by the ?roam dev readout; the speed cap itself is
 // decided by capLifted(), which does not consult zones. Pure.
 export function activityZoneCenters() {

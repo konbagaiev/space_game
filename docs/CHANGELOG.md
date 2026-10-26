@@ -3,6 +3,20 @@
 > Change log, newest on top. Append-only (we don't edit history).
 > Current state is in [SUMMARY.md](SUMMARY.md).
 
+## 2026-10-26
+
+- **Level reward and mission location have one source each (duplication audit C5, C6)** —
+  `[2026-10-26-1616-reward-and-mission-anchors]` ([plan](plans/2026-10-26-1616-reward-and-mission-anchors.md),
+  DECISIONS §169). A component reward is now owned when **some slot holds exactly its id** or it is in the stash
+  (`rewardOwned`, `client/src/sim-core/drops-config.js`) — before, any filled repair slot counted, so a player
+  with Repair drone II / Nanobot repair equipped never saw the Level 2 crate; now they do. New
+  `server/src/level-rewards.test.js` pins each level's `lastKillDrop` to the grant in the next level's briefing;
+  `reward-drop.test.js` gains Level 2 cases through the real sim (19 equipped → 1 crate, 12 equipped → 0).
+  `server/src/missions.js` reads its side-mission centres from `ANCHORS` (`system-map.js`) instead of literals;
+  `missions.test.js` pins centre == host object pos and ∈ the roam activity zones. New follow-ups audit file
+  ([`2026-10-26-duplication-audit-followups.md`](plans/2026-10-26-duplication-audit-followups.md)) records F1: a
+  briefing `installComponent` destroys the part it replaces (not fixed).
+
 ## 2026-10-24
 
 - **Ship ids are fixed in the seed; one catalog builder (duplication audit B3, C8)** — `[2026-10-24-1926-ship-ids-catalog-builder]`

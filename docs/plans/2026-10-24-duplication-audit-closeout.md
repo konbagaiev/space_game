@@ -1,6 +1,6 @@
 # Duplication audit — close-out (every remaining item)
 
-**Date:** 2026-10-24. **Status:** Phases 1–2 done; Phases 3–8 not started.
+**Date:** 2026-10-24. **Status:** Phases 1–3 done; Phases 4–8 not started.
 **Source:** [`2026-10-20-duplication-audit.md`](2026-10-20-duplication-audit.md) (ids A6–A9, B3–B5, C1–C17 refer
 to it; read the matching section there for the original evidence). The first five phases of the clean-up are
 done — [`2026-10-20-base-menu-state-and-drift-fixes.md`](2026-10-20-base-menu-state-and-drift-fixes.md) fixed
@@ -154,6 +154,10 @@ the sim). Deploy note: the migration runs at server start on prod — watch the 
 
 ## Phase 3 — Level reward and mission location as single sources (C5, C6)
 
+**Status:** done 2026-10-26 (`<commit>`, merge `<merge>`, run 2026-10-26-1616-reward-and-mission-anchors), [plan](2026-10-26-1616-reward-and-mission-anchors.md).
+Step 1 below was superseded by the maintainer's call: a component reward is owned by its **exact id** in any
+slot or the stash — no catalog lookup, no `slot` on `lastKillDrop` (DECISIONS §169).
+
 Size S–M.
 
 ### C5 — the level reward stated three times
@@ -176,9 +180,10 @@ Size S–M.
 1. `missions.js` imports `ANCHORS` for mining/research centres (the freighter keeps its documented +50 z
    offset — express it as `ANCHORS.x + offset` if it has an anchor, else leave it and test it).
 2. Guard: a server test that for every generated mission type, `objectForMission(id).pos` equals the mission's
-   `center` (± the documented freighter offset), and the roam activity-zone centre matches.
+   `center` **exactly** (the freighter's +50 z offset is between its anchor and its set-piece, already pinned
+   in `system-map.test.js` — the mission centre equals the anchor), and the roam activity-zone centre matches.
 
-**Tests:** server `npm test`; `node --test client/src/sim-core/drops*.test.js client/src/sim-core/system-map.test.js`;
+**Tests:** server `npm test`; `node --test client/src/drops.test.js client/src/sim-core/system-map.test.js`;
 `22-trace-replay` only if `rewardOwned`'s call signature changes inside the sim.
 
 ---
@@ -403,7 +408,7 @@ After the last phase:
    `fight-spec.js`, `hits.js`, `wire.js`, `account-rules.js`, `staged-reveal.js`, …) are listed where SUMMARY
    maps systems to files.
 4. Any new findings the phases surfaced (e.g. the splash `hit` gap in C10) go into a new short audit file, not
-   into this one.
+   into this one — see [`2026-10-26-duplication-audit-followups.md`](2026-10-26-duplication-audit-followups.md).
 
 | Phase | Items | Size | Main risk / guard |
 |---|---|---|---|

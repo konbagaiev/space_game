@@ -36,7 +36,7 @@ export function shouldDeposit(drop) { return !!drop && !drop.special; }
 // Pure ownership gate: does the player already have this reward, EQUIPPED or IN THE STASH (DECISIONS §166)?
 // Stash: exactly this item ({kind, refId}) in `activeShip.stashRefs` (getActivePlayerShip lists rows with
 // qty > 0 only, so selling the last copy frees it). Equipped: a weapon reward is owned if any mount references
-// it; a component reward (the L2 repair drone) is owned if the repair slot is filled (any repair component).
+// it; a component reward is owned if any slot holds exactly that component id (DECISIONS §169).
 // Takes the active ship explicitly (drops.js passes G.activeShip; a netsim room passes the account record) so
 // it's THREE-free + node-testable.
 export function rewardOwned(activeShip, reward) {
@@ -50,7 +50,7 @@ export function rewardOwned(activeShip, reward) {
   }
   if (reward.kind === 'component') {
     const comps = as.components || (as.ship && as.ship.components) || {};
-    return comps.repair != null; // L2 reward is the repair slot; refId 12 lands here
+    return Object.values(comps).some((id) => id === reward.refId); // exactly this part, in any slot
   }
   return false;
 }

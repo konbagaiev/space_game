@@ -12,7 +12,9 @@ leak found the same day). **Still open:**
   ([`2026-10-24-1836-dedup-shared-contracts.md`](2026-10-24-1836-dedup-shared-contracts.md), DECISIONS §167).
 - **B3, C8** fixed 2026-10-24 by Phase 2 of the close-out plan
   ([`2026-10-24-1926-ship-ids-catalog-builder.md`](2026-10-24-1926-ship-ids-catalog-builder.md), DECISIONS §168).
-- **Not planned yet:** A7, A8, A9, B4, C5, C6, C9–C17.
+- **C5, C6** fixed 2026-10-26 by Phase 3 of the close-out plan
+  ([`2026-10-26-1616-reward-and-mission-anchors.md`](2026-10-26-1616-reward-and-mission-anchors.md), DECISIONS §169).
+- **Not planned yet:** A7, A8, A9, B4, C9–C17.
 
 **Close-out plan (2026-10-24):** every open item is scheduled in
 [`2026-10-24-duplication-audit-closeout.md`](2026-10-24-duplication-audit-closeout.md) (8 phases).
@@ -83,8 +85,8 @@ Sizes: **S** ≤ ½ day, **M** ~1–2 days, **L** more.
 | C2 | Slot lists + weapon-group map, client vs server | **fixed 2026-10-24** (`6ad1a1a`, §167) | — | S |
 | C3 | Sell rate ×3, test checks a literal | **fixed 2026-10-24** (`6ad1a1a`) | — | S |
 | C4 | Client hand-rebuilds the progression object after a game | **fixed 2026-10-24** (`6ad1a1a`) | — | S |
-| C5 | Level reward stated 3 times (drop / briefing grant / owned check) | sync risk | — | S–M |
-| C6 | Mission location "four-way invariant" only half tested | sync risk | — | S |
+| C5 | Level reward stated 3 times (drop / briefing grant / owned check) | **fixed 2026-10-26** (`<commit>`, §169) | — | S–M |
+| C6 | Mission location "four-way invariant" only half tested | **fixed 2026-10-26** (`<commit>`) | — | S |
 | C7 | Shop-unlock triggers + hard-coded starter ids | **fixed 2026-10-24** (`6ad1a1a`) | — | S |
 | C8 | Catalog flattening + DB row mappers duplicated | **fixed 2026-10-24** (`b1b5727`, §168) | — | M |
 | C9 | Per-tick warp/repair/shield logic copied per ship kind | drifted (minor) | replay risk | S–M |

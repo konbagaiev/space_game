@@ -10,6 +10,9 @@ import { enemyTotalFromPhases } from './enemy_total.js';
 // The ship catalog, for the card's reward estimate (no cycle: catalog_seed.js imports only enemy_total.js
 // and client/src/sim-core modules).
 import { SHIPS } from './catalog_seed.js';
+// The fixed world anchors: each side mission fights at its host object's anchor (the single source of the
+// coordinates — see FLAVORS below).
+import { ANCHORS } from '../../client/src/sim-core/system-map.js';
 
 // Enemy ship names (must match SHIPS in catalog_seed.js).
 const GUNNER = 'pirate gunner', ROCKETEER = 'basic rocket pirate', HEAVY = 'pirate mini boss', BOSS = 'first pirate boss';
@@ -66,31 +69,23 @@ export const round10 = (n) => Math.round(n / 10) * 10;
 const MISSION_XP = 1000;
 
 // The three flavors — same difficulty, different framing (i18n keyed; descriptions in the client catalog).
-// `center` is the combat zone's location in the shared world (x,z); it matches the mission's set-piece
-// position in catalog_seed.js so each mission fights over its own structure, away from the campaign (0,0).
-// (left = -x, right = +x, "up"/north = -z.)
-// FOUR-WAY INVARIANT (star-system map): each center MUST equal the matching set-piece pos in
-// catalog_seed.js `home-system`, the system-map marker (system-map.js ANCHORS), AND the roam activity-zone
-// center — mining (-988,0) and research (928,0) were moved out for the flyable system (2x their old distance
-// from planet 2). The freighter was left behind by that move and so had no ANCHORS entry and no host object
-// in listSystemObjects: the mission could be taken from the board but there was nothing on the map to fly
-// to. It now honours the invariant like the other two, at (-100,-950) — a belt-ward run comparable to the
-// science/mining crossings, and clear of the space factory's short hop at (-350,-350). Its render pos stays
-// +50 z ahead of the center (so the freighter sits ahead of the player's forward-gliding spawn), which is
-// the one deliberate offset in the invariant; the center is what enemy/player spawns key off, so moving the
-// pair is balance-neutral.
+// `center` is the combat zone's location in the shared world (x,z) — it IS the host object's anchor, read
+// from `ANCHORS` (client/src/sim-core/system-map.js), so it is never restated here. The other sides of the
+// invariant are pinned by tests: the `home-system` set-piece matches the anchor (system-map.test.js; the
+// freighter renders +50 z ahead of its anchor, the one deliberate framing offset), and the anchor is a roam
+// activity-zone centre and the mission's host object on the map (missions.test.js).
+// (left = -x, right = +x, "up"/north = -z.) Fields are copied so a descriptor can never mutate an anchor.
 const FLAVORS = [
-  { type: 'mining',    titleKey: 'mission.mining.title',    descKey: 'mission.mining.desc',    center: { x: -988, z: 0 } },
-  { type: 'research',  titleKey: 'mission.research.title',  descKey: 'mission.research.desc',  center: { x: 928, z: 0 } },
-  { type: 'freighter', titleKey: 'mission.freighter.title', descKey: 'mission.freighter.desc', center: { x: -100, z: -950 } },
+  { type: 'mining',    titleKey: 'mission.mining.title',    descKey: 'mission.mining.desc',    center: { x: ANCHORS.mining.x, z: ANCHORS.mining.z } },
+  { type: 'research',  titleKey: 'mission.research.title',  descKey: 'mission.research.desc',  center: { x: ANCHORS.science.x, z: ANCHORS.science.z } },
+  { type: 'freighter', titleKey: 'mission.freighter.title', descKey: 'mission.freighter.desc', center: { x: ANCHORS.freighter.x, z: ANCHORS.freighter.z } },
 ];
 
 // The currently-offered side missions. Stateless for 2a (the three flavors are fixed); each carries a
 // full descriptor the client plays directly. `sideMission: true` tells the client to bank-without-advance.
 // ONE shared world (map `home-system` holds all the set-pieces at fixed positions); a mission only changes
 // WHERE you fight — its `center` spawns the player + arena over the matching structure; the others are at
-// a distance. Each center matches its set-piece position in catalog_seed.js's `home-system`; the one
-// deliberate offset (the freighter's render pos, +50 z ahead of its center) is explained on FLAVORS above.
+// a distance. Where each centre comes from is explained on FLAVORS above.
 export function generateMissions() {
   const phases = sideMissionPhases();
   const enemyTotal = enemyTotalFromPhases(phases);

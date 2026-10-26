@@ -7120,3 +7120,36 @@ snapshot is the one risk: if the deploy log ever shows a `[migrate] ships:` line
 from what the seed was built from — stop and look. Rollback to an older image needs no data step (its
 name-keyed upsert updates the same rows in place). `levels` is the only other table with a `setval` —
 `weapons`/`components` have no sequence at all.
+
+## 169. A component reward is owned by its exact id, not by its slot
+
+**Date:** 2026-10-26. **Context:** duplication audit C5
+([`2026-10-26-1616-reward-and-mission-anchors.md`](plans/2026-10-26-1616-reward-and-mission-anchors.md)).
+`rewardOwned` answered "is this component reward owned?" with `components.repair != null` — "is the repair slot
+filled by anything?". That is only accidentally right for today's single component reward (the Repair drone,
+id 12, a repair part), and wrong for a player who has Repair drone II (19) or Nanobot repair (20) equipped: they
+do not own the drone 12, yet the check said they did. §166 left this half alone because tightening it was not
+asked for; the audit asked.
+
+**Decision (maintainer).** A component reward is owned iff some equipped slot holds **exactly** `reward.refId`
+(`Object.values(components)` contains it) **or** the stash holds `{kind: 'component', refId}` — the same rule
+weapons already use (a mount with `weapon === refId`). No catalog lookup, no new field on `lastKillDrop`, no
+signature change to `rewardOwned` / `ownsReward`; both hosts' callers are unchanged. The briefing action stays
+the real grant; a server test (`level-rewards.test.js`) pins each `lastKillDrop` to the next level's briefing
+grant instead of generating one from the other.
+
+- **Look up the reward's slot in the catalog** — rejected: both call sites (the browser and a netsim room) would
+  need the catalog, and it keeps "slot filled" semantics, which is the wrong question (owning *a* repair part is
+  not owning *this* one).
+- **Stamp `slot` on the `lastKillDrop` record** — rejected: a fourth copy of "component 12 is a repair part",
+  next to the catalog row, the briefing action's `slot: 'repair'` and the check itself.
+
+**Consequences.**
+- A player with Repair drone II (19) or Nanobot repair (20) equipped, and without drone 12 in the stash, now
+  sees the cosmetic Level 2 reward crate (before: no crate). Reachable: the shop opens on the Level 2 briefing,
+  before the Level 2 fight. Pinned through the real sim in `reward-drop.test.js`.
+- The reward branch draws no random number; the fallback loot branch draws `simRandom()`. A flipped ownership
+  answer therefore changes the RNG draw count on the last kill, and an old **level-2** trace recorded in that
+  state (19/20 equipped, 12 not owned) may replay differently from the last kill on. Playback already reads
+  ownership from the *viewer's* account, and §166 accepted that a differing reward drop in playback does not
+  matter. No trace-format change, `TRACE_VERSION` stays 4.
