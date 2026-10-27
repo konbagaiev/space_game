@@ -190,7 +190,7 @@ Size S–M.
 
 ## Phase 4 — One fight spec, one player build (B4, B5 remainder, C12, C13)
 
-**Status:** done 2026-10-27 (`<commit>`, run 2026-10-26-1812-fight-spec-player-build), [plan](2026-10-26-1812-fight-spec-player-build.md).
+**Status:** done 2026-10-27 (`37ba47d`, merge `7a8004e`, run 2026-10-26-1812-fight-spec-player-build), [plan](2026-10-26-1812-fight-spec-player-build.md).
 `?duel` is forwarded on the netsim handshake (not refused), the tab drops its own entry-spawned combatants when a
 room drives the run, and the beam is now recorded (DECISIONS §170).
 
