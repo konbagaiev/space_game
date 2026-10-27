@@ -7,8 +7,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createWorld, noopHost } from './sim-core/world.js';
-import { createNetState, applySnapshot, renderNet, clearNet, INTERP_DELAY_MS, tickAt } from './netsim-world.js';
-import { SIM_DT } from './sim-core/consts.js';
+import { createNetState, applySnapshot, renderNet, clearNet, INTERP_DELAY_MS, tickAt, dropLocalCombatants } from './netsim-world.js';
+import { SIM_DT, TICK_HZ, SNAPSHOT_EVERY, MAX_CATCHUP_STEPS, MAX_FRAME_SEC } from './sim-core/consts.js';
 import { createRoom } from '../../server/src/netsim/room.js';
 import { createJerkProbe } from './netsim-jerk.js';
 import { buildCatalog } from '../../server/src/sim-host.js';
@@ -659,4 +659,38 @@ test('an ACE descriptor (the brawl\'s red team) builds a ghost through makeAce â
   const w2 = clientWorld();
   applySnapshot(w2.world, createNetState(), snapOf({ spawns: [{ id: 1, kind: 'enemy', name: 'Sentinel duelist' }] }));
   assert.equal(w2.world.enemies.length, 0);
+});
+
+// ---------- a room-driven run keeps no LOCAL combatants (?duel&netsim=1 showed 4 ships, not 2) ----------
+test('dropLocalCombatants drops every enemy/ally the room did not describe, and keeps the ghosts', () => {
+  const despawned = [];
+  const world = createWorld({ host: { onSpawn() {}, onDespawn: (kind, e) => despawned.push([kind, e]), onWarmLevel() {} } });
+  const st = createNetState();
+  const localA = { name: 'local ace A', alive: true };
+  const localB = { name: 'local ace B', alive: true };
+  const ghost = { name: 'room ace', alive: true };
+  const wing = { name: 'local wingman', alive: true };
+  st.idOf.set(ghost, 7);   // what applySnapshot registers for every entity it creates
+  world.enemies.push(localA, ghost, localB);
+  world.allies.push(wing);
+  assert.equal(dropLocalCombatants(world, st), 3);
+  assert.deepEqual(world.enemies, [ghost], 'the room\'s ghost stays');
+  assert.deepEqual(world.allies, []);
+  assert.equal(ghost.alive, true);
+  for (const e of [localA, localB, wing]) assert.equal(e.alive, false, `${e.name} is dead`);
+  assert.deepEqual(despawned.map(([k, e]) => [k, e.name]).sort(),
+    [['ally', 'local wingman'], ['enemy', 'local ace A'], ['enemy', 'local ace B']], 'host.onDespawn frees each mesh');
+  assert.equal(dropLocalCombatants(createWorld({ host: noopHost }), createNetState()), 0, 'an empty world: nothing to drop');
+});
+
+// ---------- C12: the timing constants have one home ----------
+test('INTERP_DELAY_MS is derived from the snapshot rate (3 intervals), exactly 100 ms today', () => {
+  assert.equal(INTERP_DELAY_MS, 3 * SNAPSHOT_EVERY * 1000 / TICK_HZ);
+  assert.equal(INTERP_DELAY_MS, 100);
+});
+
+test('MAX_FRAME_SEC is the catch-up cap in seconds â€” exactly the old 0.1 clamp', () => {
+  assert.equal(MAX_FRAME_SEC, MAX_CATCHUP_STEPS * SIM_DT);
+  assert.equal(MAX_FRAME_SEC, 0.1);
+  assert.equal(MAX_CATCHUP_STEPS, 6);
 });

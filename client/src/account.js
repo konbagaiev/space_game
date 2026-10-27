@@ -12,9 +12,8 @@ import { fetchJson } from './net.js';
 import { API_BASE } from './api-base.js';
 import { buildMap } from './world.js';
 import { buildPlayerFor } from './ship-build.js';
-import { applyAllyDev } from './ally-dev.js';
-import { applyDuelDev } from './duel-dev.js'; // ?duel (dev): rebuild the level as the sparring room
-import { applyBrawlDev } from './brawl-dev.js'; // ?brawl: rebuild the level as the bot-brawl room
+import { fightSpec } from './fight-spec-dev.js'; // the ONE fight spec (?ally/?lancer/?beam/?duel/?brawl)
+import { applyFightSpec } from './sim-core/fight-spec.js'; // …its level half, in the one order
 import { levelRunner } from './sim.js';
 import { t } from './i18n.js';
 import { showMain } from './mainwindow.js';
@@ -280,7 +279,7 @@ async function reloadPlayerWorld() {
       const map = await fetchJson(`/api/maps/${level.descriptor.map}`);
       buildMap(map.descriptor);
     }
-    CATALOG.level = applyBrawlDev(applyDuelDev(applyAllyDev(level.descriptor))); // ?ally/?duel/?brawl re-inject here too, or it would stop working after a login
+    CATALOG.level = applyFightSpec(level.descriptor, fightSpec()); // the whole fight spec re-applies here too, or the dev flags would stop working after a login
     CATALOG.levelName = level.name; // the SEED NAME (level-N) — the trace level for session recording
     const active = await fetchJson(`/api/players/${G.playerId}/active-ship`).catch(() => null);
     G.activeShip = active;

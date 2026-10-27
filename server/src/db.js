@@ -82,8 +82,9 @@ async function renumberLevelsZeroBased() {
       const parkedId = r.rows[0].id;
       await client.query('UPDATE players SET current_progress = $1 WHERE current_progress = $2', [newId, parkedId]);
       await client.query('UPDATE levels SET id = $1, name = $2 WHERE id = $3', [newId, newName, parkedId]);
-      // NB for a FUTURE level rename: a `?duel` session's level is stored PREFIXED (`duel:level-1`), so an
-      // exact-match rewrite like this one would silently miss it. Harmless here — this migration is a
+      // NB for a FUTURE level rename: a `?duel` session's level is stored PREFIXED (`duel:level-1`), and so is
+      // a dev fight's (`dev:level-4`, DECISIONS §170), so an exact-match rewrite like this one would silently
+      // miss both. Harmless here — this migration is a
       // one-shot guarded by `migrations_pg` and was applied long before any duel row could exist.
       await client.query('UPDATE gameplay_sessions SET level = $1 WHERE level = $2', [newName, oldName]);
     }

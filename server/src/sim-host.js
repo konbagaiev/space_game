@@ -24,11 +24,8 @@ import { makePlayer } from '../../client/src/sim-core/ship-entity.js';
 import { clearAndPlaceRun, startRun } from '../../client/src/sim-core/reset-world.js';
 import { seedSim } from '../../client/src/sim-core/sim-random.js';
 import { Vec3 } from '../../client/src/sim-core/vec.js';
-import { withAllyAt } from '../../client/src/sim-core/ally-config.js';
-import { withLancersAt } from '../../client/src/sim-core/lancer-config.js';
-import { withBeamGun } from '../../client/src/sim-core/beam-config.js';
-import { withDuelRoom } from '../../client/src/sim-core/duel-config.js';
-import { BRAWL_LEVEL, BRAWL_SEED, withBrawlRoom, spawnBrawl, clampBrawlN } from '../../client/src/sim-core/brawl.js';
+import { NO_FIGHT_SPEC, applyFightSpec, resolvePlayerBuild } from '../../client/src/sim-core/fight-spec.js';
+import { BRAWL_LEVEL, BRAWL_SEED, spawnBrawl, clampBrawlN } from '../../client/src/sim-core/brawl.js';
 
 // The catalog the client assembles from `/api` at boot (main.js), built here straight from the seed the
 // server would have served — through the same `catalogFromRows`, ships id-ordered on both. Same shape,
@@ -57,12 +54,16 @@ export function stationFor(mapName) {
 // Build the exact ship a client (or a recording) is playing — id-only refs, so it is independent of any
 // account row. An unknown `shipId` falls back to the catalog's player ship and its default loadout, which
 // is what a trace recorded before those fields existed needs.
-export function buildShip(catalog, { shipId = null, loadout = null, components = null, skills = null,
-                                     beam = false } = {}) {
+//
+// `spec` is the FIGHT SPEC (`sim-core/fight-spec.js`): its ship half — `?beam`'s gun, `?duel`'s forced kit —
+// is applied by the same `resolvePlayerBuild` the browser's ship builder and both recorders call.
+export function buildShip(catalog, { shipId = null, loadout = null, components = null, skills = null } = {},
+                          spec = NO_FIGHT_SPEC) {
   let ship = shipById(catalog, shipId);   // seed ids are explicit (= every DB's), so this really matches
   if (!ship) for (const s of catalog.shipByName.values()) if (s.type === 'player') { ship = s; break; }
   if (!ship) throw new Error('catalog carries no player ship');
-  // `?beam` (dev) is applied HERE, to the EFFECTIVE loadout, rather than to the account row in socket.js.
+  // The fight spec (`?beam`, `?duel`) is applied HERE, to the EFFECTIVE loadout, rather than to the account row
+  // in socket.js.
   // The fallback is why: an account lookup that fails leaves `loadout` null and the room flies the catalog
   // default, and a swap applied upstream would have silently done nothing in exactly that case — the same
   // shape of bug this flag is being forwarded to fix. One place, one resolved loadout, no hole.
@@ -72,16 +73,12 @@ export function buildShip(catalog, { shipId = null, loadout = null, components =
   // catalog row and hand every later room in the process a beam-armed player. (Same trap as `withAllyAt`
   // and `withLancersAt` with a level's `phases`.)
   const effective = loadout || { mounts: ship.stats.mounts };
-  return makePlayer(catalog, {
-    ship,
-    loadout: beam ? withBeamGun(effective) : effective,
-    components: components || ship.components,
-    // Skills change the ship — engine power, weapon damage, shield capacity, and (Maneuver) whether the
-    // dodge roll DRAWS from the seeded stream at all. A run must therefore be re-simulated with the same
-    // allocation it was played with, or it is a different fight. A live room takes them from the account
-    // server-side, never from the client.
-    skills,
-  });
+  // Skills change the ship — engine power, weapon damage, shield capacity, and (Maneuver) whether the
+  // dodge roll DRAWS from the seeded stream at all. A run must therefore be re-simulated with the same
+  // allocation it was played with, or it is a different fight. A live room takes them from the account
+  // server-side, never from the client. (A duel clears them: `withDuelKit`.)
+  return makePlayer(catalog, resolvePlayerBuild(
+    { ship, loadout: effective, components: components || ship.components, skills }, spec));
 }
 
 // A World ready to be stepped: catalog resolved, station placed, ship built, seeded stream installed, the
@@ -98,8 +95,8 @@ export function buildShip(catalog, { shipId = null, loadout = null, components =
 // weapons and drew an aiming sight over a ship that was firing a machine gun.
 // `duel` — the `?duel` sparring room as `{ aces: N }`, or null. Rebuilt server-side so a duel trace can be
 // re-simulated by the referee (docs/plans/2026-09-01-1845-duel-referee.md).
-// The headless referee (`server/tools/sim-replay.mjs`) passes `duel` when the trace it is replaying carries
-// a room, and NONE of the other three — so a re-simulated campaign trace is unchanged.
+// The headless referee (`server/tools/sim-replay.mjs`) passes the whole spec the trace recorded
+// (`fightSpecFromTrace`) — all null/false for a campaign trace, so a re-simulated campaign run is unchanged.
 // `brawl` — the bot brawl's count per side (`?netbrawl=N`, a server-run room), or null. It forces the level
 // to `BRAWL_LEVEL`, replaces the script with the inert brawl room, seeds `BRAWL_SEED` and spawns both teams
 // UN-ARMED (the room arms the fight on the client's first input). It wins over `ally`, `lancer` and `duel`,
@@ -108,23 +105,15 @@ export function createSimWorld({ levelName = 'level-0', seed = 1, ship = {}, hos
                                  lancer = null, beam = false, duel = null, brawl = null } = {}) {
   if (brawl) levelName = BRAWL_LEVEL;
   const catalog = buildCatalog(levelName);
-  // Every transform COPIES: `buildCatalog` shares the seed's `phases` array, so mutating it in place would
-  // give every room in this process an ally (or a wave of lancers).
-  //
-  // `brawl` replaces the whole script like `duel` does, and wins over all three: with it set, none of the
-  // others is applied.
-  if (brawl) catalog.level = withBrawlRoom(catalog.level);
-  else {
-    if (ally) catalog.level = withAllyAt(catalog.level, ally);
-    if (lancer) catalog.level = withLancersAt(catalog.level, lancer);
-    // `duel` is LAST: it replaces the phase script the other two edit — the same ordering the client applies
-    // in main.js (`applyDuelDev(applyLancerDev(applyAllyDev(...)))`).
-    if (duel) catalog.level = withDuelRoom(catalog.level, duel.aces);
-  }
+  // The FIGHT SPEC, applied by the same two sim-core functions the browser uses, in the same one order
+  // (`sim-core/fight-spec.js`: brawl replaces everything; else ally, lancer, duel last). Both COPY —
+  // `buildCatalog` shares the seed's `phases` array (see that module's header).
+  const spec = { ally, lancer, beam: !!beam, duel, brawl };
+  catalog.level = applyFightSpec(catalog.level, spec);
   const world = createWorld({ host });
   world.catalog = catalog;
   world.station = stationFor(catalog.level.map);
-  world.player = buildShip(catalog, { ...ship, beam });
+  world.player = buildShip(catalog, ship || {}, spec);
   // The account record the simulation itself consults: `ownsReward` reads it to decide whether the
   // last-kill reward drop should appear at all (you never get a second copy). Left null it always dropped.
   world.activeShip = ship.activeShip || null;

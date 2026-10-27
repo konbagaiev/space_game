@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseBrawlCount, evalBrawlDev, applyBrawlDev, brawlActive, brawlDevLevel, brawlTierOverride } from './brawl-dev.js';
+import { parseBrawlCount, evalBrawlDev, brawlActive, brawlDevLevel, brawlTierOverride } from './brawl-dev.js';
 
 test('off for a missing flag and for 0/false/off', () => {
   assert.equal(evalBrawlDev(''), null);
@@ -29,13 +29,11 @@ test('tier must be a real tier; sec clamps to 10..300', () => {
   assert.equal(evalBrawlDev('?brawl=5&sec=45').sec, 45);
 });
 
-test('with the flag off (node has no location) everything is inert and applyBrawlDev is the identity', () => {
+// (The level transform's identity-off / brawl-room-on cases are `applyFightSpec`'s now: sim-core/fight-spec.test.js.)
+test('with the flag off (node has no location) everything is inert', () => {
   assert.equal(brawlActive(), false);
   assert.equal(brawlDevLevel(), null);
   assert.equal(brawlTierOverride(), null);
-  const x = { phases: [] };
-  assert.equal(applyBrawlDev(x), x, 'the SAME object back');
-  assert.notEqual(applyBrawlDev(x, { n: 5 }), x, '…and a brawl room when on');
 });
 
 test('parseBrawlCount: digits are clamped to 1..100; anything else keeps the count already shown', () => {

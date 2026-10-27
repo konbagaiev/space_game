@@ -21,7 +21,7 @@ import assert from 'node:assert/strict';
 import { verifyDuel, verifyDuelSession, classifyDuel, DUEL_VERIFY_MAX_TICKS } from './verify-duel.js';
 import { runTrace } from '../../tools/sim-replay.mjs';
 import { makeTrace } from '../../../client/src/replay.js';
-import { DUEL_LOADOUT, DUEL_COMPONENTS } from '../../../client/src/duel-dev.js';
+import { DUEL_LOADOUT, DUEL_COMPONENTS } from '../../../client/src/sim-core/duel-config.js';
 import { duelAnchorReached } from '../../../client/src/sim-core/duel-config.js';
 
 const SEED = 12345;

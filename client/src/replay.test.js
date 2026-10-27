@@ -426,10 +426,23 @@ test('hydrateTrace preserves the room while unpacking the runs', () => {
 test('validateTrace accepts a good room and rejects a malformed one', () => {
   const base = makeTrace({ level: 'level-1', seed: 1, dt: 1 / 60, ticks: [{ k: [], t: null }] });
   assert.deepEqual(validateTrace({ ...base, room: { kind: 'duel', aces: 2 } }), []);
-  assert.match(validateTrace({ ...base, room: { kind: 'x' } })[0] || '', /not a duel room/);
+  assert.match(validateTrace({ ...base, room: { kind: 'x' } })[0] || '', /neither a duel nor a dev room/);
   assert.match(validateTrace({ ...base, room: { kind: 'duel', aces: 0 } })[0] || '', /out of range/);
   assert.match(validateTrace({ ...base, room: { kind: 'duel', aces: 99 } })[0] || '', /out of range/);
   assert.match(validateTrace({ ...base, room: { kind: 'duel', aces: 1.5 } })[0] || '', /out of range/);
+});
+
+// The recorded FIGHT SPEC (DECISIONS §170): a dev fight is `kind:'dev'`, and either kind may carry ally/lancer/beam.
+test('validateTrace accepts the fight-spec rooms and rejects malformed ones', () => {
+  const base = makeTrace({ level: 'level-4', seed: 1, dt: 1 / 60, ticks: [{ k: [], t: null }] });
+  assert.deepEqual(validateTrace({ ...base, room: { kind: 'dev', ally: 'clear-out' } }), []);
+  assert.deepEqual(validateTrace({ ...base, room: { kind: 'dev', lancer: 'wave-1', beam: true } }), []);
+  assert.deepEqual(validateTrace({ ...base, room: { kind: 'duel', aces: 2, beam: true } }), []);
+  assert.match(validateTrace({ ...base, room: { kind: 'dev' } })[0] || '', /nothing set/);
+  assert.match(validateTrace({ ...base, room: { kind: 'brawl' } })[0] || '', /neither a duel nor a dev room/);
+  assert.match(validateTrace({ ...base, room: { kind: 'dev', beam: 'yes' } })[0] || '', /beam is present but not true/);
+  assert.match(validateTrace({ ...base, room: { kind: 'dev', ally: '' } })[0] || '', /not a phase name/);
+  assert.match(validateTrace({ ...base, room: { kind: 'duel', aces: 2, lancer: 5 } })[0] || '', /not a phase name/);
 });
 
 // An optional, additive field is backward-compatible: a trace WITHOUT `room` reads exactly as it always

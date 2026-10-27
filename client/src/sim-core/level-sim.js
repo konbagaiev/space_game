@@ -3,6 +3,7 @@
 // engine graph. Proves the destroyed counter reaches enemyTotal exactly and the reward drop fires on the
 // true last kill under staggered spawns (the regression 2026-07-06-1738 fixed).
 import { stepSpawnGate } from './spawn-timing.js';
+import { SIM_DT } from './consts.js';
 
 // enemyTotal is the sum of every spawning phase's `total` (mirrors server/src/enemy_total.js).
 export function levelEnemyTotal(phases) {
@@ -65,7 +66,7 @@ export function stepMissionZone(state, { dist, dt, radius = MISSION_ZONE_RADIUS,
 // destroys one available enemy per step. Returns the total kills to clear and the kill index the drop
 // fires on. Warp invulnerability only delays WHEN an enemy is killable, never the final count, so it isn't
 // modeled here — the count/drop determinism is what this guards; sim.js guards + the live test cover warp.
-export function simulateLevel(phases, { dt = 1 / 60, rand = () => 0.5 } = {}) {
+export function simulateLevel(phases, { dt = SIM_DT, rand = () => 0.5 } = {}) {
   const enemyTotal = levelEnemyTotal(phases);
   let idx = 0, kills = 0, killsAtPhaseStart = 0, spawnedThisPhase = 0, cooldown = 0, alive = 0;
   let dropKill = null;

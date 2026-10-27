@@ -3,6 +3,36 @@
 > Change log, newest on top. Append-only (we don't edit history).
 > Current state is in [SUMMARY.md](SUMMARY.md).
 
+## 2026-10-27
+
+- **One fight spec, one player build (duplication audit B4, B5, C12, C13)** —
+  `[2026-10-26-1812-fight-spec-player-build]` ([plan](plans/2026-10-26-1812-fight-spec-player-build.md),
+  DECISIONS §170). The dev fight flags (`?ally`, `?lancer`, `?beam`, `?duel`, `?brawl`) are now one **fight spec**,
+  parsed once from the URL (`client/src/fight-spec-dev.js`) or read from the trace under `?playback`, and applied
+  in ONE order by two new sim-core functions (`client/src/sim-core/fight-spec.js`): **`applyFightSpec`** (the
+  level; brawl replaces everything, else ally → lancer → duel last) and **`resolvePlayerBuild`** (the ship; beam,
+  then the duel kit). The boot, the login reload, the level advance, the ship builder, both recorders, the
+  netsim room (`sim-host.js`) and the referee (`sim-replay.mjs`) all call them; the per-flag wrappers
+  (`applyAllyDev`/`applyLancerDev`/`applyDuelDev`/`applyTraceRoom`/`applyBrawlDev`/`duelBuild`/`beamLoadout`)
+  are gone, and the duel kit moved to `sim-core/duel-config.js` (`withDuelKit`). Effects, all dev-only:
+  **`?duel&netsim=1` now works** — `duel=<aces>` is forwarded on the handshake, the room builds the duel room and
+  kit, and the tab drops the local aces its own `reset()` spawned when a room drives the run
+  (`netsim-world.js dropLocalCombatants`), so the screen shows 2 ships, not 4; **`?lancer` survives a level
+  advance** (`net.js` applies the whole spec); **`trace.room` records the whole spec** — `{kind:'dev', ally?,
+  lancer?, beam?}` for a non-duel dev fight (a plain duel stays exactly `{kind:'duel',aces}`), and those rows read
+  **`dev:level-N`** (out of the campaign funnel, unverifiable to `verify-sessions.mjs`), so ▶ play shows the
+  fight that was flown; **`?beam` is recorded** (both recorders store the resolved build); the anchor digest is
+  sealed for duels only; and **a won duel never advances campaign progress** (local or netsim — before, the
+  only gate was `!sideMission`, so "Finish and Return" on a duel POSTed `/advance` past the level it was built
+  over): `withDuelRoom` marks the descriptor `campaign: false` and `sim.js` gates both halves of the advance on
+  `client/src/campaign-advance.js advancesCampaign`, so a won duel ends like a side mission. Ride-alongs: the netsim timing constants (`SNAPSHOT_EVERY`, `MAX_CATCHUP_STEPS`,
+  `MAX_FRAME_SEC`) live in `sim-core/consts.js` (room/driver re-export them) and `INTERP_DELAY_MS` is derived
+  from them (C12); `main.js` builds the tick deps once (`makeTickDeps`) with one `isLivePlay` predicate, and the
+  stale `noseZ` comment is corrected (C13). Campaign play and the Level-0 determinism fixture are unchanged
+  (intro digest `0x8d802ca2`, browser = Node). New guards: `fight-spec.test.js`, `fight-spec-dev.test.js`,
+  `fight-spec-callsites.test.js`, `campaign-advance.test.js`, sim-host/socket/gameplay-sessions/netsim-world/driver/replay/netsim test
+  extensions, and a `?duel&netsim=1` pass in `47-duel-room`.
+
 ## 2026-10-26
 
 - **Level reward and mission location have one source each (duplication audit C5, C6)** —

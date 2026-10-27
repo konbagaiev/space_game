@@ -1,6 +1,6 @@
 # Duplication audit — close-out (every remaining item)
 
-**Date:** 2026-10-24. **Status:** Phases 1–3 done; Phases 4–8 not started.
+**Date:** 2026-10-24. **Status:** Phases 1–4 done; Phases 5–8 not started.
 **Source:** [`2026-10-20-duplication-audit.md`](2026-10-20-duplication-audit.md) (ids A6–A9, B3–B5, C1–C17 refer
 to it; read the matching section there for the original evidence). The first five phases of the clean-up are
 done — [`2026-10-20-base-menu-state-and-drift-fixes.md`](2026-10-20-base-menu-state-and-drift-fixes.md) fixed
@@ -189,6 +189,10 @@ Size S–M.
 ---
 
 ## Phase 4 — One fight spec, one player build (B4, B5 remainder, C12, C13)
+
+**Status:** done 2026-10-27 (`<commit>`, run 2026-10-26-1812-fight-spec-player-build), [plan](2026-10-26-1812-fight-spec-player-build.md).
+`?duel` is forwarded on the netsim handshake (not refused), the tab drops its own entry-spawned combatants when a
+room drives the run, and the beam is now recorded (DECISIONS §170).
 
 Size M. Replay-sensitive.
 

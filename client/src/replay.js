@@ -177,7 +177,8 @@ export const RETURN_HOME_STALL_TICKS = 900;
 // loadout/components/skills when the built ship IS the active ship, else nulls (the bootstrap built the
 // ship's catalog defaults, and playback falls back to those too). The ONE copy of this check — both
 // recorders (?record and the live session recorder) call it; the copy that drifted dropped skills (audit B5).
-// `?beam`'s swapped-in weapon is NOT captured here (known gap, see SUMMARY).
+// The fight spec's overrides (`?beam`'s gun, `?duel`'s kit) are applied on top by `resolvePlayerBuild`
+// (sim-core/fight-spec.js) — both recorders do, so the trace records the ship that was actually flown.
 export function flownBuild({ activeShip, shipName, shipByName }) {
   const shipId = ((shipByName && shipByName.get(shipName)) || {}).id ?? 1;
   const active = !!(activeShip && activeShip.ship && activeShip.ship.name === shipName);
@@ -213,7 +214,10 @@ export function makeTrace({ id, level, seed, dt, shipId, loadout, components, sk
     // different ship and diverges immediately (see the v4 note at the top) — null means "none spent",
     // which is also how every pre-v4 trace has to be read.
     skills: skills || null,
-    // The ROOM this fight was fought in, when it was not the plain level: `{ kind:'duel', aces:N }`.
+    // The FIGHT SPEC this fight was fought in, when it was not the plain level (sim-core/fight-spec.js
+    // `roomFromFightSpec`, DECISIONS §170): `{ kind:'duel', aces:N, ally?, lancer?, beam? }` for a `?duel`
+    // (a plain duel is exactly `{ kind:'duel', aces:N }`), `{ kind:'dev', ally?, lancer?, beam? }` for any
+    // other dev fight, null for a campaign run. `fightSpecFromTrace` reads it back for playback and the referee.
     // `level` stays the catalog level the room was built over, so `buildCatalog` still resolves it and
     // `classifyTrace` still works. Optional and additive: **TRACE_VERSION stays 4** (DECISIONS §125's
     // version marker is for shape changes that break a reader; a trace without `room` reads exactly as it
@@ -254,7 +258,7 @@ export function makeReplaySession() {
 // main.js: the fixed-timestep accumulator inside animate() and the synchronous window.__replay.step(n)
 // hook. It used to be written out twice ("mirror the accumulator" in the step() copy), so any edit to one
 // silently desynced the other. Everything OUTSIDE one tick stays with the caller: the replayAcc bookkeeping,
-// the `steps < 6` cap and the record/playback HUD.
+// the `MAX_CATCHUP_STEPS` cap and the record/playback HUD.
 //
 // Injected deps (this module stays DOM/engine-free and unit-testable):
 //   rs         — the makeReplaySession() object (play/trace/index/done/autoFinish/returning + watchdog)
@@ -322,12 +326,21 @@ export function validateTrace(t) {
   if (!t.level) problems.push('level missing');
   // `skills` is optional (absent in v1–v3) but must be an object when present: it rebuilds the ship.
   if (t.skills != null && typeof t.skills !== 'object') problems.push('skills is present but not an object');
-  // `room` is optional too (absent on every campaign session). When present it rebuilds a NON-standard
-  // fight, so it has to be exactly the one shape we know how to rebuild.
+  // `room` is optional too (absent on every campaign session). When present it is the recorded FIGHT SPEC and
+  // rebuilds a non-standard fight (sim-core/fight-spec.js), so it has to be one of the two shapes we know how
+  // to rebuild: a duel (`aces` in range) or a dev fight (at least one of ally/lancer/beam). Either may carry
+  // `ally`/`lancer` (non-empty phase names) and `beam` (exactly `true`).
   if (t.room != null) {
     const r = t.room;
-    if (typeof r !== 'object' || r.kind !== 'duel') problems.push('room is present but not a duel room');
-    else if (!Number.isInteger(r.aces) || r.aces < 1 || r.aces > ACE_COUNT_MAX) problems.push(`room.aces ${r.aces} is out of range (1..${ACE_COUNT_MAX})`);
+    if (typeof r !== 'object' || (r.kind !== 'duel' && r.kind !== 'dev')) problems.push('room is present but is neither a duel nor a dev room');
+    else {
+      if (r.kind === 'duel' && (!Number.isInteger(r.aces) || r.aces < 1 || r.aces > ACE_COUNT_MAX)) problems.push(`room.aces ${r.aces} is out of range (1..${ACE_COUNT_MAX})`);
+      if (r.kind === 'dev' && r.ally == null && r.lancer == null && r.beam == null) problems.push('room is a dev room with nothing set (ally/lancer/beam)');
+      for (const f of ['ally', 'lancer']) {
+        if (r[f] != null && (typeof r[f] !== 'string' || r[f] === '')) problems.push(`room.${f} is present but not a phase name`);
+      }
+      if (r.beam != null && r.beam !== true) problems.push('room.beam is present but not true');
+    }
   }
   // Either shape is accepted: v1's flat `ticks`, or v2's packed `runs`. Both must be non-empty.
   if (Array.isArray(t.ticks)) { if (t.ticks.length === 0) problems.push('ticks is empty'); }

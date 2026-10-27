@@ -172,22 +172,18 @@ rockets shot out of the air against 4, an ace engaged on 18.6 % of ticks against
   measured the thing that undermines it: the player's browser and the server's Node do not agree
   bit-for-bit, so an oracle comparing two independent simulations is hostage to the player's browser build.
   A room has no second host to agree with. If duels ever need to pay anything, read §151 before choosing.
-- **`?duel` must NOT be combined with `?netsim=1`** — and it fails messily rather than cleanly, so this is
-  worth knowing before someone tries it. `?ally`, `?lancer` and `?beam` are forwarded on the netsim
-  handshake (`netsim.js wsUrl` → `createRoom` → `createSimWorld`); `?duel` is not — the flag is read from
-  `location.search` and never travels. **Measured** (`?debug&duel&netsim=1`, local
-  server): the tab joins a room running the plain `level-1`, and both fights run at once — **4 ships on
-  screen** (2 aces spawned by the tab's own level runner + 2 `Basic pirate ship` ghosts streamed from the
-  room) against an `enemyTotal` of 2, with `duelBuild` forcing the loadout only in the tab while the room
-  flies the account's real ship.
-  **THE `sim-core` MOVE IS DONE.** `DUEL_PHASES` + `withDuelRoom` now live in
-  `client/src/sim-core/duel-config.js` beside `ally-config.js withAllyAt` and `lancer-config.js`, and
-  `createSimWorld({ duel: { aces: N } })` applies them server-side (the duel referee rebuilds a whole duel
-  from a trace this way). `spawnAces` and `stepAces` were already in `sim-core` and RNG-free. **What is
-  left** is the handshake hop — `netsim.js wsUrl` carrying the flag, `createRoom` passing `duel` through —
-  plus a server-side `aces` path for the room's own player build. Deliberately not done: the sparring room
-  is a local tool, and a half-forwarded dev flag is worse than an absent one.
-  **Cheap alternative if it keeps catching people:** refuse the combination at boot (a console error and
-  one of the two ignored), which is a few lines in `main.js` where both flags are already read.
+- **`?duel` is forwarded to a netsim room since 2026-10-27** (DECISIONS §170). The handshake carries
+  `duel=<aces>` (`netsim.js wsUrl` → `socket.js` → `createRoom` → `createSimWorld({ duel })`), the room builds
+  the duel room AND forces the duel kit through the shared fight spec (`sim-core/fight-spec.js applyFightSpec` +
+  `resolvePlayerBuild`), and when the room starts or restarts a run the tab drops the local aces its own
+  `reset()` spawned on the duel phase's entry (`netsim-world.js dropLocalCombatants`), so `?debug&duel&netsim=1`
+  shows exactly the room's 2 aces against an `enemyTotal` of 2 (guarded by `47-duel-room`'s netsim pass).
+  History, in one sentence: before this, the flag never travelled, and the measured result was the room fighting
+  plain `level-1` under the tab's duel — 4 ships on screen against an `enemyTotal` of 2, the kit forced only in the
+  tab. **A duel never advances campaign progress**, local or netsim: `withDuelRoom` marks the descriptor
+  `campaign: false` and the host's advance is gated on `client/src/campaign-advance.js advancesCampaign`, so a won
+  duel pays nothing beyond loot rolls and ends like a side mission. Known limit (dev-only): a mid-fight fallback
+  to local leaves the arena empty, so the run ends at once on an unearned "Sparring complete" — no pay beyond
+  loot, no advance; the next run reconnects.
 - **The aces do not hold fire for each other.** `friend: null`, so an ace will put a tracer through the
   other one — which is what every enemy in the game already does, and their fire cannot hurt each other.

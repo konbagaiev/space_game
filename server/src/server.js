@@ -582,10 +582,14 @@ export async function createApp() {
     const id = (typeof b.id === 'string' && /^[A-Za-z0-9_-]{8,64}$/.test(b.id)) ? b.id : crypto.randomUUID();
     const s3Key = `recordings/sessions/${id}.json`;
     // A `?duel` session is NOT a campaign run and must not sit in the campaign funnel under a level name it
-    // did not play, so its row is labelled `duel:level-N`. `trace.level` itself stays the base level, which
+    // did not play, so its row is labelled `duel:level-N`. A `kind:'dev'` fight (`?ally`/`?lancer`/`?beam`,
+    // DECISIONS §170) is not one either: its row reads `dev:level-N`, which keeps it out of the campaign
+    // funnel too, and `classifyTrace` reads both prefixes as `level-mismatch`, so `verify-sessions.mjs` counts
+    // them unverifiable rather than as false disagreements. `trace.level` itself stays the base level, which
     // is what keeps `classifyTrace` and `buildCatalog` working.
-    const duel = (trace.room && trace.room.kind === 'duel') ? trace.room : null;
-    const rowLevel = duel ? `duel:${level}` : level;
+    const kind = trace.room && trace.room.kind;
+    const duel = kind === 'duel' ? trace.room : null;   // the referee below judges DUELS only
+    const rowLevel = duel ? `duel:${level}` : (kind === 'dev' ? `dev:${level}` : level);
     let written = false;
     try {
       // Row FIRST: its player_id guard is what decides whether this upload may claim `id` at all. Writing S3
@@ -598,8 +602,11 @@ export async function createApp() {
     // THE REFEREE RUNS AFTER THE RESPONSE: re-simulating a fight is synchronous CPU, and a session upload
     // must never wait on it. setImmediate lets the 204 actually leave before the loop blocks. Duels only,
     // and only with an anchor — a provisional flush mid-fight has none, and the final upload overwrites the
-    // row anyway. `?duel` is dev-only and cannot be combined with `?netsim=1` (docs/plans/duel-room.md §8),
-    // so this can never block a live 60 Hz room — the hazard verify-sessions.mjs's header warns about.
+    // row anyway. `?duel` DOES compose with `?netsim=1` now (the room builds the duel), but a netsim-driven duel
+    // captures no ticks (the live recorder's `live` excludes `G.netDriving`), so it normally uploads nothing.
+    // The only netsim duel that reaches here is a mid-fight fallback to local, which uploads a partial trace and
+    // gets a `disagree` — dev-only, and that re-simulation (~2-10 ms) is the only time a room in this process
+    // can be delayed — the hazard verify-sessions.mjs's header warns about.
     // GAME_VERSION is null on a local box (no SENTRY_RELEASE) and classifyTrace's gate reads
     // `if (build && …)`, so the drift check is off locally and on in production. Deliberate: the feature
     // must be developable locally, and locally there is no deploy to drift from.

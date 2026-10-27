@@ -10,8 +10,8 @@ import { updateHud, announceLevel } from './hud.js';
 import { adoptBankedProgression } from './progression.js';
 import { buildMap } from './world.js';
 import { buildPlayerFor } from './ship-build.js';
-import { applyAllyDev } from './ally-dev.js';
-import { applyDuelDev } from './duel-dev.js'; // ?duel (dev): rebuild the level as the sparring room
+import { fightSpec } from './fight-spec-dev.js'; // the ONE fight spec (?ally/?lancer/?beam/?duel/?brawl)
+import { applyFightSpec } from './sim-core/fight-spec.js'; // …its level half, in the one order
 import { brawlActive } from './brawl-dev.js'; // ?brawl: a load test sends no funnel events
 import { sendSession } from './session-transport.js'; // pure beacon-vs-fetch routing (unit-tested; the no-keepalive win/death fix)
 import { jsEngine } from './engine-id.js'; // the JS engine family+version that ran this simulation (referee §3.2)
@@ -270,7 +270,7 @@ export async function loadAdvancedLevel() {
       const map = await fetchJson(`/api/maps/${level.descriptor.map}`);
       buildMap(map.descriptor);
     }
-    CATALOG.level = applyDuelDev(applyAllyDev(level.descriptor)); // reset() restarts CATALOG.level → next Restart is the new level (?ally/?duel re-injects on every level)
+    CATALOG.level = applyFightSpec(level.descriptor, fightSpec()); // reset() restarts CATALOG.level → next Restart is the new level (the whole fight spec re-applies on every level — ?lancer included)
     CATALOG.levelName = level.name; // the SEED NAME (level-N) — the trace level for session recording
     // Wait for the run's bank POST first: this read would otherwise return the PRE-run experience and
     // overwrite the freshly banked progression with it (see `banking`).

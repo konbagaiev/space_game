@@ -42,7 +42,7 @@ export default async function ({ page, assert, shot }) {
   // ---- flag ON ----
   // `wave-1` is the OPENING phase of the level a fresh account flies, so he is there from tick 0 and the
   // scenario does not have to fight a whole campaign to see him. The mechanism is the real one: a phase
-  // carrying `ally: true`, injected by `applyAllyDev` exactly as Level 5 will carry it in the seed.
+  // carrying `ally: true`, injected by `applyFightSpec` (the fight spec's `ally`) exactly as Level 5 will carry it in the seed.
   await boot(page, 'debug&ally=wave-1');
   const arrived = await page.evaluate(() => {
     const a = window.__game.allies[0];

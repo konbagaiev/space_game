@@ -29,7 +29,7 @@ import { createSimWorld } from '../sim-host.js';
 import { clearAndPlaceRun, startRun } from '../../../client/src/sim-core/reset-world.js';
 import { simTick } from '../../../client/src/sim-core/tick.js';
 import { worldDigest } from '../../../client/src/sim-core/digest.js';
-import { SIM_DT } from '../../../client/src/sim-core/consts.js';
+import { SIM_DT, SNAPSHOT_EVERY } from '../../../client/src/sim-core/consts.js';
 import { applyInput } from '../../../client/src/replay.js';
 import { engageAutopilot, engageDropAutopilot, engagePointAutopilot, cancelAutopilot }
   from '../../../client/src/sim-core/step-player.js';
@@ -39,17 +39,9 @@ import { seedSim } from '../../../client/src/sim-core/sim-random.js';
 import { BRAWL_SEED, brawlTick, brawlOver, brawlBlock, spawnBrawl } from '../../../client/src/sim-core/brawl.js';
 import { ACE_PILOT } from '../../../client/src/sim-core/ace.js';
 
-// Ticks between snapshots. 2 → 30 Hz at TICK_HZ 60. The SIM rate is not negotiable across hosts
-// (DECISIONS §118); the SNAPSHOT rate is the knob that actually costs bandwidth and is tuned on its own.
-//
-// It was 4 (15 Hz), and that is too coarse for the one thing linear interpolation is bad at: a curve. A
-// small enemy swinging its nose to track the player had its rotation drawn as fifteen straight segments a
-// second, each ending in a step of up to 3.5° in a single frame, which is exactly what the maintainer
-// reported seeing. The error scales with the interval, so halving it halves the step — and it buys back the
-// delay too, since three snapshot intervals of buffer is 100 ms at 30 Hz where it would be 200 at 15.
-// Bandwidth is not the constraint at one player per room; the alternative (splining the samples) needs
-// velocity on the wire and is not shipped by any comparable library.
-export const SNAPSHOT_EVERY = 2;
+// Ticks between snapshots (2 → 30 Hz). Defined in `sim-core/consts.js` — the client's interpolation delay is
+// derived from it — and re-exported here so every server importer keeps reading it from the room.
+export { SNAPSHOT_EVERY };
 
 // How many unconsumed inputs a room will hold — 4 s at 60 Hz. Past this the OLDEST are dropped: a client
 // that floods must not be able to grow the server's memory, and stale input is the least useful input.
@@ -82,7 +74,8 @@ const EMPTY_INPUT = { k: [], t: null };
 export const INPUT_HOLD_TICKS = 30;
 
 export function createRoom({ levelName = 'level-0', seed = 1, ship = {}, snapshotEvery = SNAPSHOT_EVERY,
-                             onEconomy = null, ally = null, lancer = null, beam = false, brawl = null } = {}) {
+                             onEconomy = null, ally = null, lancer = null, beam = false, duel = null,
+                             brawl = null } = {}) {
   const ids = new WeakMap();   // entity → network id. WeakMap: the sim never learns it has one.
   let nextId = 1;
   const spawnQueue = [];       // static descriptions of entities the client has not been told about yet
@@ -101,7 +94,9 @@ export function createRoom({ levelName = 'level-0', seed = 1, ship = {}, snapsho
   // the world is stepped with `brawlTick` instead of `simTick`, the fight is armed by the client's first
   // input, and it never reports an economy event (the player is parked and never stepped, so nothing emits
   // `cleared`/`death`; the socket also passes no sink).
-  const world = createSimWorld({ levelName, seed, ship, host, ally, lancer, beam, brawl });
+  // `duel` (`{ aces }`, the `?duel` handshake param) builds the sparring room AND the duel kit — the same fight
+  // spec the tab applied (sim-host.js → sim-core/fight-spec.js).
+  const world = createSimWorld({ levelName, seed, ship, host, ally, lancer, beam, duel, brawl });
   const brawlN = world.brawl ? world.brawl.n : null;
 
   const queue = [];            // pending client input snapshots, oldest first

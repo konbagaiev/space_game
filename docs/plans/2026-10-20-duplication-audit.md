@@ -4,8 +4,9 @@
 [`2026-10-20-base-menu-state-and-drift-fixes.md`](2026-10-20-base-menu-state-and-drift-fixes.md) shipped and
 fixed **A1, A2, A3, A4, A5, B1, B2** and the menu entry/exit part of **A6** (plus §0 and the base-menu state
 leak found the same day). **Still open:**
-- **B5 remainder:** the five-place `resolvePlayerBuild` consolidation (the `?record` skills part was fixed
-  2026-10-24 by Phase 5). **B6** fixed 2026-10-24.
+- **B4, B5 remainder, C12, C13** fixed 2026-10-27 by Phase 4 of the close-out plan
+  ([`2026-10-26-1812-fight-spec-player-build.md`](2026-10-26-1812-fight-spec-player-build.md), DECISIONS §170).
+  **B6** fixed 2026-10-24.
 - **A6 remainder:** the staged text reveal is written twice; Welcome's Take off still launches straight
   into the fight (kept deliberately).
 - **C1, C2, C3, C4, C7** fixed 2026-10-24 by Phase 1 of the close-out plan
@@ -14,7 +15,7 @@ leak found the same day). **Still open:**
   ([`2026-10-24-1926-ship-ids-catalog-builder.md`](2026-10-24-1926-ship-ids-catalog-builder.md), DECISIONS §168).
 - **C5, C6** fixed 2026-10-26 by Phase 3 of the close-out plan
   ([`2026-10-26-1616-reward-and-mission-anchors.md`](2026-10-26-1616-reward-and-mission-anchors.md), DECISIONS §169).
-- **Not planned yet:** A7, A8, A9, B4, C9–C17.
+- **Not planned yet:** A7, A8, A9, C9–C11, C14–C17.
 
 **Close-out plan (2026-10-24):** every open item is scheduled in
 [`2026-10-24-duplication-audit-closeout.md`](2026-10-24-duplication-audit-closeout.md) (8 phases).
@@ -78,8 +79,8 @@ Sizes: **S** ≤ ½ day, **M** ~1–2 days, **L** more.
 | B1 | `buyItem` sells price-0 / `buyable:false` items via direct API | **fixed 2026-10-22** (`0fb8416`, §164) | server / economy | S |
 | B2 | `gameplay_sessions` missing from `--all` reset; new-player defaults ×3 | **fixed 2026-10-22** (`0fb8416`, §165) | ops | S |
 | B3 | Server `buildShip` matches by an id seed ships don't have | **fixed 2026-10-24** (`b1b5727`, §168) | server authority | S–M |
-| B4 | Dev fight flags applied in 5 places, already diverged | drifted | dev / netsim | M |
-| B5 | "Effective player build" in 5 places; `?record` drops skills | `?record` part **fixed 2026-10-24** (§166); `resolvePlayerBuild` consolidation open | replay | M |
+| B4 | Dev fight flags applied in 5 places, already diverged | **fixed 2026-10-27** (`<commit>`, §170) | dev / netsim | M |
+| B5 | "Effective player build" in 5 places; `?record` drops skills | `?record` part **fixed 2026-10-24** (§166); `resolvePlayerBuild` consolidation **fixed 2026-10-27** (`<commit>`, §170) | replay | M |
 | B6 | Server room never passes `activeShip` → reward crate always drops | **fixed 2026-10-24** (§166) | netsim | S |
 | C1 | Skill list ×7 | **fixed 2026-10-24** (`6ad1a1a`) | — | M |
 | C2 | Slot lists + weapon-group map, client vs server | **fixed 2026-10-24** (`6ad1a1a`, §167) | — | S |
@@ -92,8 +93,8 @@ Sizes: **S** ≤ ½ day, **M** ~1–2 days, **L** more.
 | C9 | Per-tick warp/repair/shield logic copied per ship kind | drifted (minor) | replay risk | S–M |
 | C10 | Hit handling + death events copied ~8× | sync risk + latent crash | — | M |
 | C11 | Netsim wire format written 3×; ghost entities hand-built | sync risk (tested) | — | S |
-| C12 | Tick/snapshot timing constants across the boundary | sync risk | — | S |
-| C13 | Live tick deps written twice in `main.js` | sync risk | — | S |
+| C12 | Tick/snapshot timing constants across the boundary | **fixed 2026-10-27** (`<commit>`) | — | S |
+| C13 | Live tick deps written twice in `main.js` | **fixed 2026-10-27** (`<commit>`) | — | S |
 | C14 | Button styles/colours copied; same control styled two ways | drifted (style) | player | M |
 | C15 | Phone vs desktop sizing in opposite directions | sync risk | — | M |
 | C16 | Dead i18n keys still translated | waste | translators | S |
@@ -253,6 +254,7 @@ _Fixed by [`2026-10-24-1926-ship-ids-catalog-builder.md`](2026-10-24-1926-ship-i
 - Fix: fixed ids on seed ships, upsert by id (as weapons/components/levels already are). See C8.
 
 ### B4. Dev fight flags applied in five places — drifted (dev only)
+**fixed 2026-10-27** (`<commit>`, run 2026-10-26-1812-fight-spec-player-build, DECISIONS §170): one fight spec, `applyFightSpec` in every host; `?duel` is forwarded on the netsim handshake.
 - `client/src/main.js:2269` (ally, lancer, duel, trace-room, brawl); `client/src/account.js:283` (no
   lancer); `client/src/net.js:265` (no lancer, no brawl); `server/src/sim-host.js:118-129`.
 - Forwarded to the room via `main.js:1067-1072` → `netsim.js:118-137` → `socket.js:136-147`: ally, lancer,
@@ -262,6 +264,7 @@ _Fixed by [`2026-10-24-1926-ship-ids-catalog-builder.md`](2026-10-24-1926-ship-i
   `applyFightSpec(descriptor, spec)` in sim-core used at all four sites; socket + `trace.room` carry it.
 
 ### B5. "Effective player build" in five places; `?record` drops skills — drifted (replay)
+**Consolidation fixed 2026-10-27** (`<commit>`, run 2026-10-26-1812-fight-spec-player-build, DECISIONS §170): `resolvePlayerBuild` in the ship builder, both recorders and `sim-host.buildShip`. The §D line "recording doesn't capture `?beam`" is **reversed** by DECISIONS §170 — the beam is now recorded.
 **`?record` part fixed 2026-10-24** — [`2026-10-23-1823-record-skills-netsim-ship.md`](2026-10-23-1823-record-skills-netsim-ship.md): both recorders call the pure
 `flownBuild()` (`replay.js`), skills included. The five-places consolidation (`resolvePlayerBuild`) stays
 **open**, not planned. The `main.js` lines below have moved (`beginRecordCapture` is now
@@ -379,6 +382,7 @@ hand-built at `netsim-world.js:141-160` (drop height 0.8 in two places). Guarded
 sim-core constructors.
 
 ### C12. Timing constants across the boundary (S)
+**fixed 2026-10-27** (`<commit>`, run 2026-10-26-1812-fight-spec-player-build, DECISIONS §170): `SNAPSHOT_EVERY`, `MAX_CATCHUP_STEPS`, `MAX_FRAME_SEC` in `sim-core/consts.js`; `INTERP_DELAY_MS` derived.
 `INTERP_DELAY_MS = 100` (`client/src/netsim-world.js:51`) "keep in step" with `SNAPSHOT_EVERY = 2`
 (`server/src/netsim/room.js:52`); catch-up cap 6 at `main.js:1258`, `netsim.js:167`,
 `server/src/netsim/driver.js:16`; 0.1 s clamp `main.js:1237`, `:1249`; 60 Hz hard-coded at
@@ -386,6 +390,7 @@ sim-core constructors.
 contradicting `consts.js:28-35` ("one edit HERE"). Fix: constants in `sim-core/consts.js`, derive the rest.
 
 ### C13. Live tick deps twice in `main.js` (S)
+**fixed 2026-10-27** (`<commit>`, run 2026-10-26-1812-fight-spec-player-build, DECISIONS §170): one `makeTickDeps`, one `isLivePlay`; the `noseZ` comment rewritten.
 `liveTickDeps()` `main.js:1105-1118` vs inline in `__replay.step` `:2163-2170` (5 of 7 fields shared; only
 `capture` should differ); `live` check at `:1106` and `:1150`; stale `noseZ` comment `:2147`. Fix:
 `makeTickDeps({capture})`.

@@ -321,3 +321,56 @@ test('the room is handed the ACCOUNT record (ownsReward reads it)', async () => 
     b.close();
   } finally { ns.closeAll(); srv.close(); }
 });
+
+// Audit B4.2: `?duel` used to be dropped on the handshake, so `?duel&netsim=1` flew a PLAIN level in the room
+// under a duel in the tab. The room must now build the duel room AND force the duel kit — on the account's
+// real (here: beam-armed, skilled) ship, which is exactly what the kit has to override.
+test('?duel=<aces> on the handshake builds the duel room AND the duel kit; absent / 0 is no duel', async () => {
+  const REC = { ship: { id: 1 }, components: { hull: 1, engine: 5, thruster: 8, grab: 29, shield: 31 },
+    loadout: { mounts: [{ weapon: 12, group: 'gun', offset: 0, delay: 0 }, { weapon: 3, group: 'rocket', offset: 0, delay: 0 }] },
+    progression: { skills: { mobility: 3 } } };
+  const seen = [];
+  const rooms = [];
+  const spy = (args) => { seen.push(args); const r = createRoom(args); rooms.push(r); return r; };
+  const app = express();
+  app.use(express.json());
+  const tix = createTicketStore();
+  app.post('/api/ws-ticket', (req, res) => res.json(tix.issue(String(req.body.playerId))));
+  const srv = http.createServer(app);
+  await new Promise((r) => srv.listen(0, r));
+  const ns = attachNetsim(srv, { tickets: tix, pingEveryMs: 50, loadShip: async () => REC, createRoomFn: spy,
+    log: { warn: (m) => console.error(m), info: () => {}, log: () => {} } });
+  const port = srv.address().port;
+  const ticket = async () => (await (await fetch(`http://localhost:${port}/api/ws-ticket`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ playerId: 'p-duel' }),
+  })).json()).ticket;
+  const open = (query) => new Promise((resolve, reject) => {
+    const ws = new WebSocket(`ws://localhost:${port}${WS_PATH}?${query}`);
+    ws.inbox = [];
+    ws.on('message', (data) => { ws.inbox.push(JSON.parse(data)); ws.emit('inbox'); });
+    ws.once('open', () => resolve(ws));
+    ws.once('error', reject);
+  });
+  try {
+    const a = await open(`ticket=${await ticket()}&level=level-1&duel=2`);
+    const welcome = await waitFor(a, (m) => m.type === 'welcome');
+    assert.deepEqual(seen[0].duel, { aces: 2 }, 'the room factory is asked for the duel');
+    const w = rooms[0].world;
+    assert.deepEqual(w.player.mounts.map((m) => m.weapon.id), [1, 3], 'the DUEL kit, not the account\'s beam');
+    assert.equal(w.catalog.level.phases[0].name, 'duel');
+    assert.equal(w.catalog.level.phases[0].aces, 2);
+    assert.equal(w.catalog.level.enemyTotal, 2);
+    assert.equal(welcome.enemyTotal, 2, 'the welcome tells the tab 2 enemies, not the plain level\'s total');
+    a.close();
+
+    const b = await open(`ticket=${await ticket()}&level=level-1&duel=0`);
+    await waitFor(b, (m) => m.type === 'welcome');
+    assert.equal(seen[1].duel, null, 'duel=0 is no duel');
+    b.close();
+    const c = await open(`ticket=${await ticket()}&level=level-1`);
+    await waitFor(c, (m) => m.type === 'welcome');
+    assert.equal(seen[2].duel, null, 'no duel param is no duel');
+    assert.deepEqual(rooms[2].world.player.mounts.map((m) => m.weapon.id), [12, 3], 'and the account\'s own ship flies');
+    c.close();
+  } finally { ns.closeAll(); srv.close(); }
+});

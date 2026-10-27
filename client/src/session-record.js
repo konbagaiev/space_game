@@ -34,12 +34,13 @@ export function makeSessionRecorder() {
     final: false,        // a terminal (win/death) flush already went out → this session is closed
     id: null,            // client-minted, stable across the session's provisional + final uploads
     seed: 0, level: null, shipId: null, loadout: null, components: null, skills: null, dt: 0,
-    // The ROOM this session was fought in, when it was not the plain level: `{ kind:'duel', aces:N }`, else
+    // The FIGHT SPEC this session was fought in, when it was not the plain level (`roomFromFightSpec`,
+    // sim-core/fight-spec.js): `{ kind:'duel', aces:N, … }` or `{ kind:'dev', ally?, lancer?, beam? }`, else
     // null (every campaign session). It travels on the trace, so a re-simulation rebuilds the same fight.
     room: null,
     // The digest of the World at the instant the FIGHT ended — the duel referee's comparison point
     // (docs/plans/2026-09-01-1845-duel-referee.md §3.1). null until sealed, and null forever on a session
-    // with no room: nothing pays for a digest it will not use.
+    // that is not a DUEL (a campaign run or a `kind:'dev'` fight): nothing pays for a digest it will not use.
     anchor: null,
     runs: [],            // [[tickSnapshot, repeatCount], …]
     tickCount: 0,

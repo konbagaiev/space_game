@@ -37,10 +37,15 @@
 // NO TUNING PANEL. The behaviour numbers live in the weapon row and the look values are baked constants;
 // both are settled. `lil-gui` must not become a shipped import.
 //
-// BOTH FLAGS CHANGE THE FIGHT, so — exactly like `?ally` — a campaign session recorded with either on will
-// re-simulate into a divergence in `server/tools/verify-sessions.mjs`. Expected for a dev flag, not a bug.
-import { withLancersAt, DEV_LANCER_DEFAULT_PHASE } from './sim-core/lancer-config.js';
-import { withBeamGun } from './sim-core/beam-config.js';
+// BOTH FLAGS CHANGE THE FIGHT, so — exactly like `?ally` — a campaign session recorded with either on carries
+// the whole fight spec in `trace.room` (`{ kind:'dev', lancer?, beam? }`), and its `loadout` carries the beam
+// itself: ▶ play and the headless replay rebuild the fight that was flown, and the row reads `dev:level-N`
+// (unverifiable, not "disagree" — DECISIONS §170).
+//
+// WHERE THE FLAGS ARE APPLIED: nowhere in this file. The parsers below feed the ONE fight spec
+// (`fight-spec-dev.js`); the beam swap is `resolvePlayerBuild` and the lancer pool is `applyFightSpec`, both in
+// `sim-core/fight-spec.js`, used by the tab, the room and the referee alike.
+import { DEV_LANCER_DEFAULT_PHASE } from './sim-core/lancer-config.js';
 import { normalizeLevelName } from './replay.js';
 
 // Pure + storage-free, so it is unit-testable without a DOM: the URL alone decides.
@@ -50,25 +55,6 @@ export function evalBeamDev(search) {
   if (v == null) return null;
   if (v === '0' || v === 'false' || v === 'off') return null;
   return true;
-}
-
-// Resolved LAZILY on first ask, not at import time: the flag is read from the ship builder, which runs at a
-// point in the boot this module must not have to be ordered against.
-let CFG;
-export function beamDev() {
-  if (CFG === undefined) CFG = evalBeamDev(typeof location === 'undefined' ? '' : location.search);
-  return CFG;
-}
-// Test seam: force the parsed config (pass null for "flag off").
-export function setBeamDev(cfg) { CFG = cfg; }
-
-// The FLAG-GATED half of the swap: the pure transform is `withBeamGun` in `sim-core/beam-config.js`, so a
-// netsim ROOM can apply exactly the same one (a server cannot read `location.search`). Returns a NEW loadout
-// object — the caller's, which may be the account's live `G.activeShip.loadout`, is never mutated. With the
-// flag off the SAME object comes straight back out: a strict no-op for every real player.
-export function beamLoadout(loadout) {
-  if (!beamDev() || !loadout) return loadout;
-  return withBeamGun(loadout);
 }
 
 // ---------- ?lancer: the ENEMY half ----------
@@ -87,12 +73,7 @@ export function evalLancerDev(search) {
 }
 
 // Read at IMPORT time, like `?ally` — the level descriptor is fetched later than module load, so there is no
-// boot-ordering trap here. (`?beam` above resolves lazily because the ship builder asks for it mid-boot.
-// Keep the two shapes as they are — do not unify them.)
+// boot-ordering trap here. (The fight spec itself — `fight-spec-dev.js` — resolves lazily, because the ship
+// builder asks for the beam mid-boot; that covers both the import-time and the lazy shape.)
 const LANCER_DEV = evalLancerDev(typeof location !== 'undefined' ? location.search : '');
-export function lancerDev() { return LANCER_DEV; }
 export function lancerDevLevel() { return LANCER_DEV && LANCER_DEV.level; }
-// A strict no-op with the flag off: the SAME descriptor object comes straight back out.
-export function applyLancerDev(descriptor) {
-  return LANCER_DEV ? withLancersAt(descriptor, LANCER_DEV.phase) : descriptor;
-}
