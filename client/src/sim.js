@@ -41,6 +41,7 @@ import { simTick as simTickIn } from './sim-core/tick.js';
 import { brawlTick } from './sim-core/brawl.js'; // ?brawl: the bot brawl's tick replaces the campaign tick (inert without world.brawl)
 import { drawDrops, preloadRewardModel, ownsReward, hideGrabLine, takeLoot, attachDropBody, detachDropBody } from './drops.js';
 import { drawBeamSight, startBeamCharge, startHostileBeamCharge, spawnBeamBolt, hideBeamFx } from './beam-fx.js';
+import { advancesCampaign } from './campaign-advance.js'; // the one "does this win advance the account" predicate (no side mission, no duel)
 import { track, currentLevelLabel, bankRun, commitLevelAdvance, loadAdvancedLevel, depositLoot,
          reportMissionCleared, refreshAfterRoomBank } from './net.js';
 import { t } from './i18n.js';
@@ -413,7 +414,8 @@ function applySimEvent(ev) {
       if (!G.replayMode) {
         if (!G.netDriving) { const loot = takeLoot(); if (loot.length) depositLoot(loot); } // a room deposits its own
         const lvl = levelRunner.level;
-        if (lvl && !lvl.sideMission) commitLevelAdvance(); // progress is now safe even if the flight is abandoned
+        // Never for a side mission or a `?duel` room (`campaign: false`) — campaign-advance.js.
+        if (advancesCampaign(lvl)) commitLevelAdvance(); // progress is now safe even if the flight is abandoned
       }
       break;
     }
@@ -438,7 +440,7 @@ function applySimEvent(ev) {
         // autopilot bringing it home. The server-side half was committed at `finishing`, so the progress
         // is already safe whether or not this ever runs.
         const lvl = levelRunner.level;
-        if (lvl && !lvl.sideMission) loadAdvancedLevel();
+        if (advancesCampaign(lvl)) loadAdvancedLevel();
       }
       // The mission is over, so a server-run room has nothing left to simulate — release it (§132). The
       // menu reconnects for the next run by itself. Outside the replay gate deliberately: a link is a link

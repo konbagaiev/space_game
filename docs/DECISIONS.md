@@ -7153,3 +7153,50 @@ grant instead of generating one from the other.
   state (19/20 equipped, 12 not owned) may replay differently from the last kill on. Playback already reads
   ownership from the *viewer's* account, and §166 accepted that a differing reward drop in playback does not
   matter. No trace-format change, `TRACE_VERSION` stays 4.
+
+## 170. Dev fights are recorded as what they were: the whole fight spec in `trace.room`, and the beam in the loadout
+
+**Date:** 2026-10-27. **Context:** duplication audit B4/B5 (Phase 4,
+[`2026-10-26-1812-fight-spec-player-build.md`](plans/2026-10-26-1812-fight-spec-player-build.md)). The five dev
+flags that change the fight (`?ally`, `?lancer`, `?beam`, `?duel`, `?brawl`) were applied in five places with five
+subsets and orders, and the recorders knew only about the duel: an `?ally`/`?lancer`/`?beam` session recorded as a
+plain campaign level whose replay diverged, a `?beam` session recorded the account's gun, and `?duel&netsim=1`
+fought one fight in the tab and another in the room. They are now one **fight spec** applied by two sim-core
+functions (`applyFightSpec`, `resolvePlayerBuild`, `client/src/sim-core/fight-spec.js`) in every host.
+
+**Decision (maintainer, Q1/Q2).**
+- **Additive `kind:'dev'` over a format bump.** `trace.room` is `{ kind:'duel', aces, ally?, lancer?, beam? }` for
+  a duel and `{ kind:'dev', ally?, lancer?, beam? }` for any other dev fight; `TRACE_VERSION` stays 4. Every
+  existing reader keeps working: a `room:null` trace is unchanged, and **a plain duel stays exactly
+  `{kind:'duel',aces}`** (each extra field is written only when set), so the duel fixtures and scenario 49 are
+  byte-identical. `?brawl` is never recorded (a brawl records no session at all).
+- **`dev:` row labels** (`dev:level-N`, beside `duel:level-N`) keep dev fights out of the campaign funnel and out
+  of verification: `classifyTrace` reads the prefix as `level-mismatch`, so `verify-sessions.mjs` counts them
+  unverifiable rather than as false disagreements.
+- **Playback trusts the trace over the URL.** Under `?playback` the spec is `fightSpecFromTrace(trace)`; the URL's
+  dev flags are ignored for the fight. An old `{kind:'duel',aces}` trace maps to exactly the room the old
+  `applyTraceRoom` built; a `room:null` trace maps to `NO_FIGHT_SPEC` itself (identity).
+- **The beam gap is closed**, reversing the audit §D "keep" note: both recorders store
+  `resolvePlayerBuild(flownBuild(…), spec)`, so a `?beam` trace's `loadout` carries weapon 12, and `room.beam`
+  is recorded too. `withBeamGun` is idempotent, so re-applying it on playback is harmless. It was "keep" only
+  because there was no spec to carry it; now there is.
+- **The referee stays duel-only** (`server.js` gate, `verify-duel.js`), and so does the anchor-digest seal
+  (`sr.room?.kind === 'duel'`) — nothing pays for a digest it will not use.
+- **`?duel` composes with `?netsim=1`.** The handshake forwards `duel=<aces>`, the room builds the duel room and
+  kit (`createSimWorld({ duel })` → the same two functions), and the tab drops the local combatants its own
+  `reset()` spawned on the first phase's entry when a room starts the run (`dropLocalCombatants`) — otherwise the
+  screen showed 4 ships. Economy is the room's ordinary sink, which pays a duel nothing beyond the normal 20 %
+  loot rolls, the same as a local duel.
+- **A duel never advances campaign progress (maintainer, reviewer finding).** The room is built over a real
+  level, and the advance's only gate was `!sideMission`, so any won duel — local, netsim, or the instant
+  empty-arena win below — committed `/advance` past that level. `withDuelRoom` now marks the descriptor
+  `campaign: false` and `sim.js` asks `advancesCampaign` (`client/src/campaign-advance.js`) at both `finishing`
+  and `win`; a won duel ends like a side mission (victory overlay, Continue to the Hangar, no advance). The flag
+  is host-only — sim-core never reads it and it is not in `worldDigest` — so no replay changes. Stated limit, not
+  fixed (dev-only): a mid-fight fallback to local leaves an empty arena and ends the run at once on an unearned
+  "Sparring complete", which pays nothing beyond loot rolls and advances nothing.
+
+**Alternatives rejected.** A `TRACE_VERSION` bump (breaks every reader for an additive field); recording
+`?ally`/`?lancer`/`?beam` as unlabelled campaign rows (they re-simulate into false `disagree`s and pollute the
+funnel); extending the referee to `kind:'dev'` rows (no economy rides on them — DECISIONS §30); refusing
+`?duel&netsim=1` at boot (forwarding is a few lines and makes it work).

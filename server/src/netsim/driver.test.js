@@ -94,3 +94,15 @@ test('start() opens a fresh window, so an idle pause is not one long second', ()
   assert.equal(srv.length, 1);
   assert.ok(srv[0].ticks >= 59, `the first window after resume is a real second (${srv[0].ticks} ticks)`);
 });
+
+// C12: the timing constants have ONE home (client/src/sim-core/consts.js); the room and the driver re-export
+// them so every server importer keeps working — and they must be the same values, not copies.
+test('SNAPSHOT_EVERY / MAX_CATCHUP_STEPS re-exported from room/driver are the sim-core consts', async () => {
+  const consts = await import('../../../client/src/sim-core/consts.js');
+  const room = await import('./room.js');
+  const driver = await import('./driver.js');
+  assert.equal(room.SNAPSHOT_EVERY, consts.SNAPSHOT_EVERY);
+  assert.equal(driver.MAX_CATCHUP_STEPS, consts.MAX_CATCHUP_STEPS);
+  assert.equal(consts.SNAPSHOT_EVERY, 2);
+  assert.equal(consts.MAX_CATCHUP_STEPS, 6);
+});

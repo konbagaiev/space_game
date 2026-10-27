@@ -187,7 +187,7 @@ test('GET /admin/sessions: admin disabled (env unset) → 404', async () => {
 
 const { recordSessionVerdict } = await import('./datastore.js');
 const { makeTrace } = await import('../../client/src/replay.js');
-const { DUEL_LOADOUT, DUEL_COMPONENTS } = await import('../../client/src/duel-dev.js');
+const { DUEL_LOADOUT, DUEL_COMPONENTS } = await import('../../client/src/sim-core/duel-config.js');
 const { duelAnchorReached } = await import('../../client/src/sim-core/duel-config.js');
 const { runTrace } = await import('../tools/sim-replay.mjs');
 
@@ -224,6 +224,24 @@ test('POST /api/sessions: a duel session is labelled duel:level-N and records it
     'a duel is not a campaign run and must not sit in the campaign funnel under a level it did not play');
   assert.equal(row.jsEngine, 'WebKit/18.2');
   assert.equal(row.verdict, null, 'no anchor claimed → nothing to judge');
+});
+
+// A non-duel DEV fight (`?ally`/`?lancer`/`?beam`, DECISIONS §170) carries `room: { kind:'dev', … }`. It is not a
+// campaign run either, so its row reads `dev:level-N` (out of the funnel, unverifiable to classifyTrace) — and
+// the referee, which judges DUELS only, does not run even when the body claims an anchor.
+test('POST /api/sessions: a kind:\'dev\' session is labelled dev:level-N and is never judged', async () => {
+  const id = 'gs-dev-label';
+  const trace = makeTrace({ id: null, level: 'level-4', seed: 7, dt: 1 / 60, shipId: 1,
+    room: { kind: 'dev', ally: 'clear-out', beam: true }, runs: [[{ k: [], t: null }, 300]], tickCount: 300 });
+  const anchor = { tick: 300, hash: 123, draws: 4 };
+  const r = await post('/api/sessions', { id, trace, anchor, level: 'level-4', outcome: 'death',
+    durationMs: 5000, kills: 0, engine: 'Chromium/140.0.0.0' });
+  assert.equal(r.status, 204);
+  await new Promise((res) => setTimeout(res, 100));   // the referee would have run on setImmediate by now
+  const row = await rowById(id);
+  assert.ok(row, 'the row was written');
+  assert.equal(row.level, 'dev:level-4');
+  assert.equal(row.verdict, null, 'the referee is duel-only');
 });
 
 test('POST /api/sessions: a campaign session is untouched — plain level, no verdict', async () => {

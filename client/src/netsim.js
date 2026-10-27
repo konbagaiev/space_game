@@ -12,7 +12,7 @@
 // client already produces exactly that 60 times a second for session recording, the headless referee
 // already consumes it, and a third dialect would be a third thing to keep in sync.
 import { API_BASE } from './api-base.js';
-import { SIM_DT } from './sim-core/consts.js';
+import { SIM_DT, MAX_CATCHUP_STEPS } from './sim-core/consts.js';
 import { snapshotInput } from './replay.js';
 
 // Input ticks per outbound message. 3 → ~20 messages/s carrying 60 ticks/s of input. Batching costs a
@@ -115,7 +115,7 @@ export function isUnroomableSideMission(netsim, activeMission) {
 // Build the socket URL from the page's origin (or the configured API base), swapping the scheme. Kept pure
 // so the mapping http→ws / https→wss is testable; getting it wrong on the itch build would be a silent
 // mixed-content failure with no error worth reading.
-export function wsUrl({ apiBase = API_BASE, origin, ticket, level, seed, ally, lancer, beam, brawl }) {
+export function wsUrl({ apiBase = API_BASE, origin, ticket, level, seed, ally, lancer, beam, duel, brawl }) {
   const base = apiBase || origin;
   const u = new URL('/ws', base);
   u.protocol = u.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -132,6 +132,10 @@ export function wsUrl({ apiBase = API_BASE, origin, ticket, level, seed, ally, l
   // cross the wire because the ROOM builds the player: without it the server flies the account's real gun
   // while this tab draws a beam sight over it, which is what the aiming lines are there NOT to do.
   if (beam) u.searchParams.set('beam', '1');
+  // `duel` = the `?duel` sparring room as `{ aces }`; the wire carries the ace count. The ROOM builds the duel
+  // room and forces the duel kit from it, so a server-run duel is the fight this tab built (it used to be
+  // silently dropped here, and `?duel&netsim=1` flew a plain level in the room under a duel in the tab).
+  if (duel) u.searchParams.set('duel', String(duel.aces));
   // `brawl` = bots per side: the room runs the bot brawl instead of the level (`?netbrawl`).
   if (brawl) u.searchParams.set('brawl', String(brawl));
   return u.toString();
@@ -164,7 +168,7 @@ export function createUplink({ send, batch = INPUT_BATCH }) {
       // would just overflow the room's queue and get the oldest dropped, so cap the catch-up the same way
       // the local accumulator does.
       let steps = 0;
-      while (acc >= SIM_DT && steps < 6) {
+      while (acc >= SIM_DT && steps < MAX_CATCHUP_STEPS) {
         const s = snapshotInput(keys, touchAim);
         const snapshotTick = { t: tick++, k: s.k, a: s.t };
         pending.push(snapshotTick);
@@ -190,7 +194,8 @@ export function createUplink({ send, batch = INPUT_BATCH }) {
 //
 // Failure is quiet and total: if the ticket or the socket fails there is no half-connected state to reason
 // about, `onError` fires once, and the caller decides what the player sees.
-export async function connectNetsim({ playerId, level, seed, ally = null, lancer = null, beam = null, brawl = null,
+export async function connectNetsim({ playerId, level, seed, ally = null, lancer = null, beam = null, duel = null,
+                                      brawl = null,
                                       origin = location.origin,
                                       onWelcome, onSnapshot, onClose, onError,
                                       fetchFn = fetch, WebSocketImpl = WebSocket } = {}) {
@@ -204,7 +209,7 @@ export async function connectNetsim({ playerId, level, seed, ally = null, lancer
   if (!res.ok) { onError?.(new Error(`ws-ticket ${res.status}`)); return null; }
   const { ticket } = await res.json();
 
-  const ws = new WebSocketImpl(wsUrl({ origin, ticket, level, seed, ally, lancer, beam, brawl }));
+  const ws = new WebSocketImpl(wsUrl({ origin, ticket, level, seed, ally, lancer, beam, duel, brawl }));
   // Attached BEFORE the socket opens: the room sends `welcome` the instant the upgrade completes, so a
   // handler installed on `open` races it and loses the message.
   ws.onmessage = (ev) => {

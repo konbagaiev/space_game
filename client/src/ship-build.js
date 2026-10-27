@@ -19,8 +19,8 @@ export const updateGroups = (ship, fwd, isPlayer, dt, wantsFire) =>
 import { world } from './state.js';                             // the World these shots are fired into
 import { disposeShipExhaust } from './exhaust-fx.js'; // free the retired player mesh's attached plume on a ship swap
 import { ALLY_ACCENT_COLOR, ALLY_ACCENT_MATERIAL_PREFIX } from './sim-core/ally-config.js'; // the wingman's wing livery
-import { beamLoadout } from './beam-dev.js';         // ?beam: mount the Charged beam (a strict no-op when off)
-import { duelBuild } from './duel-dev.js';          // ?duel: force the sparring loadout (a strict no-op when off)
+import { fightSpec } from './fight-spec-dev.js';    // the ONE fight spec (?beam / ?duel change the ship; the trace's under ?playback)
+import { resolvePlayerBuild } from './sim-core/fight-spec.js'; // …its ship half (identity when no flag is set)
 
 // Catalog resolution lives in sim-core/ship-entity.js (a server has to do it too). These wrappers bind
 // THIS tab's World so the long-standing call signatures — `resolveComponents(refs)` and friends — keep
@@ -56,11 +56,11 @@ export function buildPlayerFor(ship, override = null) {
   // a skill-less ship diverged within seconds. Previews still get none. See the v4 note in replay.js.
   const skills = override ? (override.skills || null)
     : ((useActive && G.activeShip.progression) ? G.activeShip.progression.skills : null);
-  // `?beam` swaps the gun mount for the Charged beam on the way in. With the flag off `beamLoadout`
-  // returns the very same object, so a normal build is untouched.
-  // `?duel` forces the whole build (starter gun + repair drone, no skills) so the sparring room is the same
-  // fight on any account. Off, `duelBuild` hands the very same object back.
-  G.player = buildPlayer(duelBuild({ ship, loadout: beamLoadout(loadout), components, skills }));
+  // The fight spec's SHIP half, the same `resolvePlayerBuild` the room and both recorders call: `?beam` swaps
+  // the gun mount for the Charged beam, then `?duel` forces the whole build (starter gun + repair drone, no
+  // skills) so the sparring room is the same fight on any account. With no flag set the very same object
+  // comes back out, so a normal build is untouched. Under ?playback the spec is the trace's.
+  G.player = buildPlayer(resolvePlayerBuild({ ship, loadout, components, skills }, fightSpec()));
   G.currentShipName = ship.name;
   scene.add(G.player.mesh);
 }

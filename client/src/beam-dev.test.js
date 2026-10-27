@@ -1,12 +1,11 @@
 // The ?beam dev flag.
 //
-// Two things are worth guarding, and they mirror `ally-dev.test.js`. The FLAG is not sticky and reads only
-// the URL (the §81 rule `dev.js` follows), so evaluating it is pure. And `beamLoadout` must be a STRICT
-// no-op with the flag off — it is called on the way into every player build, including the account's live
-// `G.activeShip.loadout`, so a copy or a mutation there would show up in every real player's ship.
+// The FLAG is not sticky and reads only the URL (the §81 rule `dev.js` follows), so evaluating it is pure.
+// The pure swap (`withBeamGun`) is unconditional and never mutates. The "strict no-op with the flag off" guard
+// moved with the flag into the fight spec (`sim-core/fight-spec.test.js`, `resolvePlayerBuild`).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { evalBeamDev, evalLancerDev, beamLoadout, setBeamDev } from './beam-dev.js';
+import { evalBeamDev, evalLancerDev } from './beam-dev.js';
 import { withBeamGun, BEAM_WEAPON_ID } from './sim-core/beam-config.js';
 
 test('evalBeamDev: absent or falsy is OFF', () => {
@@ -67,32 +66,6 @@ test('?beam and ?lancer COMPOSE, and are read independently', () => {
   assert.deepEqual(evalLancerDev('?beam&level=4'), null, 'and the player alone arms no lancers');
 });
 
-test('beamLoadout with the flag OFF returns the very same object, untouched', () => {
-  setBeamDev(null);
-  const loadout = { mounts: [{ group: 'gun', weapon: 1, offset: 0, delay: 0 }] };
-  assert.equal(beamLoadout(loadout), loadout, 'identity — not a copy, not a rebuild');
-  assert.equal(loadout.mounts[0].weapon, 1);
-  assert.equal(beamLoadout(null), null);
-});
-
-test('beamLoadout with the flag ON swaps ONLY the gun mount, and never mutates the caller\'s loadout', () => {
-  setBeamDev(true);
-  const gun = { group: 'gun', weapon: 1, offset: 0, delay: 0 };
-  const rocket = { group: 'rocket', weapon: 3, offset: 0, delay: 0 };
-  const loadout = { mounts: [gun, rocket], shipName: 'Scout' };
-
-  const out = beamLoadout(loadout);
-  assert.notEqual(out, loadout, 'a NEW loadout');
-  assert.equal(out.mounts[0].weapon, 12, 'the gun slot now carries the Charged beam (catalog id 12)');
-  assert.equal(out.mounts[1].weapon, 3, 'the rocket is left alone — a beam-armed ship keeps its rockets');
-  assert.equal(out.mounts[0].offset, 0, 'the rest of the mount is carried through');
-  assert.equal(out.shipName, 'Scout', 'and the rest of the loadout with it');
-
-  assert.equal(loadout.mounts[0].weapon, 1, 'the ORIGINAL is untouched — it may be the live account object');
-  assert.equal(gun.weapon, 1);
-  setBeamDev(null);
-});
-
 // THE PURE HALF, which a netsim ROOM applies (a server cannot read `location.search`). It is UNCONDITIONAL
 // — no flag inside it — because the flag is the browser's concern and the room is told `beam=1` instead.
 // This split is what stopped the two ends disagreeing about the player's weapon in a room.
@@ -116,20 +89,6 @@ test('withBeamGun swaps every gun mount unconditionally, and never mutates the c
   assert.equal(withBeamGun(null), null);
 });
 
-test('beamLoadout is withBeamGun behind the FLAG — the browser gates, the room does not', () => {
-  const loadout = { mounts: [{ group: 'gun', weapon: 1, offset: 0, delay: 0 }] };
-  setBeamDev(null);
-  assert.equal(beamLoadout(loadout), loadout, 'flag off: identity, so a real player is untouched');
-  setBeamDev(true);
-  assert.deepEqual(beamLoadout(loadout).mounts, withBeamGun(loadout).mounts,
-    'flag on: exactly what the ROOM applies, so the two ends cannot disagree about the weapon');
-  setBeamDev(null);
-});
-
-test('beamLoadout copes with a loadout that has no gun mount at all', () => {
-  setBeamDev(true);
-  const loadout = { mounts: [{ group: 'rocket', weapon: 3 }] };
-  assert.deepEqual(beamLoadout(loadout).mounts, [{ group: 'rocket', weapon: 3 }]);
-  assert.deepEqual(beamLoadout({}).mounts, []);
-  setBeamDev(null);
-});
+// The flag-gated half (`beamLoadout`) is gone: the beam is the fight spec's `beam` field, applied by
+// `resolvePlayerBuild` — its identity-off, non-mutation and "the room applies the same swap" cases are in
+// `sim-core/fight-spec.test.js`.

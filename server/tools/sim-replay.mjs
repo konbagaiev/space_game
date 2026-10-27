@@ -19,8 +19,9 @@
 //   node server/tools/sim-replay.mjs <trace.json> [--ticks N] [--json]
 //
 // The trace format is documented in client/src/replay.js (`makeTrace`): input + seed, never positions. A
-// trace may also name the ROOM it was fought in (`room: { kind:'duel', aces:N }`) — the world is then
-// rebuilt with that room, or a re-simulation would judge a fight that never happened
+// trace may also name the ROOM it was fought in (`room: { kind:'duel', aces:N, … }` or `{ kind:'dev', … }`,
+// the recorded fight spec) — the world is then rebuilt with that spec, or a re-simulation would judge a fight
+// that never happened
 // (docs/plans/2026-09-01-1845-duel-referee.md).
 // See docs/plans/server-authoritative-sim.md (Slice C).
 import { readFileSync } from 'node:fs';
@@ -31,6 +32,7 @@ import { createSimWorld } from '../src/sim-host.js';
 import { simTick } from '../../client/src/sim-core/tick.js';
 import { worldDigest } from '../../client/src/sim-core/digest.js';
 import { hydrateTrace, traceLevelName, applyInput } from '../../client/src/replay.js';
+import { fightSpecFromTrace } from '../../client/src/sim-core/fight-spec.js';
 
 // Re-exported because the referee's own tests assert on them, and because "what catalog/station did this
 // run use" is part of reading a replay result.
@@ -42,14 +44,18 @@ export { buildCatalog, stationFor } from '../src/sim-host.js';
 // the duel referee stops at the end of the FIGHT rather than the end of the trace, so the digest computed
 // after the loop is the anchor digest and `ticksRun` is the anchor tick (…-duel-referee.md §3.1). Callers
 // that pass nothing are bit-for-bit unchanged.
-// `duel` overrides the room the world is built with; it defaults to whatever the trace itself names.
+// `duel` overrides the duel room the world is built with; it defaults to whatever the trace itself names.
 export function runTrace(trace, { maxTicks = Infinity, onTick = null, stopWhen = null, duel = undefined } = {}) {
   const t = hydrateTrace(trace);
-  const room = duel !== undefined ? duel
-    : (t.room && t.room.kind === 'duel' ? { aces: t.room.aces } : null);
+  // The WHOLE fight spec the trace recorded (`trace.room`, sim-core/fight-spec.js): a `?duel` room, and any
+  // `?ally`/`?lancer`/`?beam` riding along or on their own (`kind:'dev'`). For a `room:null` trace — every
+  // campaign run, and the Level-0 fixture — every field is null/false, so the world is built exactly as before.
+  const spec = fightSpecFromTrace(t);
+  const room = duel !== undefined ? duel : spec.duel;
   const world = createSimWorld({
     levelName: traceLevelName(t),
     seed: t.seed,
+    ally: spec.ally, lancer: spec.lancer, beam: spec.beam,
     duel: room,   // the `?duel` sparring room this fight was actually fought in, or null (every campaign run)
     // SKILLS INCLUDED. A run played with points spent is a different ship — engine power, weapon damage,
     // shield capacity, and via Maneuver's dodge whether the hostile-hit roll draws from the seeded stream

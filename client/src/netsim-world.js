@@ -26,7 +26,8 @@ import { makeEnemyShell } from './sim-core/ship-entity.js';
 import { makeAlly } from './sim-core/ally.js';
 import { makeAce } from './sim-core/ace.js';
 import { shortestAngleDelta } from './sim-core/steering.js';
-import { BULLET_PLANE_Y, SIM_DT } from './sim-core/consts.js';
+import { BULLET_PLANE_Y, SIM_DT, TICK_HZ, SNAPSHOT_EVERY } from './sim-core/consts.js';
+import { despawnAt } from './sim-core/spawn.js';
 
 // ---------- One clock ----------
 //
@@ -48,7 +49,9 @@ import { BULLET_PLANE_Y, SIM_DT } from './sim-core/consts.js';
 // 20 Hz, Mirror's `bufferTimeMultiplier = 2`, Colyseus's "1–2 server tick intervals"). We take THREE, which
 // is Fiedler's margin for losing two in a row, and it is affordable here because this game has no latency
 // requirement worth the trade. At `SNAPSHOT_EVERY = 2` (30 Hz) three intervals is 100 ms.
-export const INTERP_DELAY_MS = 100;   // = 3 intervals at SNAPSHOT_EVERY 2; keep the two in step
+export const INTERP_SNAPSHOTS = 3;
+// DERIVED from the snapshot rate (`sim-core/consts.js`, shared with the room), so the two cannot drift apart.
+export const INTERP_DELAY_MS = INTERP_SNAPSHOTS * SNAPSHOT_EVERY * 1000 / TICK_HZ;
 
 // How much history to keep. Enough to cover the delay several times over, so a burst of jitter cannot
 // exhaust it; small enough that it is a handful of objects.
@@ -459,6 +462,26 @@ export function renderNet(world, state, now = Date.now(), delayMs = INTERP_DELAY
   // LAST: the ?netjerk probe reads the poses that were just written, so it measures exactly what the
   // player sees rather than what the network delivered.
   if (state.jerk) state.jerk.frame(world, state, now);
+}
+
+// A run the ROOM drives has no local combatants. The tab's own reset() still runs the level script's
+// first phase, and a phase that spawns on ENTRY (`aces: N`, `ally: true`) puts real local ships in the
+// World that the room never described — `?duel&netsim=1` showed the room's 2 aces AND 2 local ones.
+// Drop every enemy/ally with no network id. Ghosts (ids in `state.idOf`) are untouched. Bullets, rockets
+// and drops are not touched either: none exist at run start. `despawnAt` sets `alive = false`, calls the
+// host's `onDespawn` (which frees the mesh) and splices. Returns how many were dropped (a diagnostic, and
+// what the test asserts); 0 for every campaign level, whose first phase spawns nothing on entry.
+export function dropLocalCombatants(world, state) {
+  let dropped = 0;
+  for (const [kind, list] of [['enemy', world.enemies], ['ally', world.allies]]) {
+    if (!list) continue;
+    for (let i = list.length - 1; i >= 0; i--) {
+      if (state.idOf.has(list[i])) continue;
+      despawnAt(world, kind, list, i);
+      dropped++;
+    }
+  }
+  return dropped;
 }
 
 // Drop every ghost and forget the history — leaving netsim, or the socket died.

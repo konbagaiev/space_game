@@ -35,3 +35,25 @@ export const OOB_RETURN_TIME = 30.0; // seconds outside before the auto warp-bac
 // recording's dt; old traces carry their own dt and still replay at the rate they were recorded.
 export const TICK_HZ = 60;
 export const SIM_DT = 1 / TICK_HZ;
+
+// Ticks between netsim snapshots. 2 → 30 Hz at TICK_HZ 60. The SIM rate is not negotiable across hosts
+// (DECISIONS §118); the SNAPSHOT rate is the knob that actually costs bandwidth and is tuned on its own.
+// It lives here (not in `server/src/netsim/room.js`, which re-exports it) because the client's interpolation
+// delay is DERIVED from it (`netsim-world.js INTERP_DELAY_MS`), and a client cannot import from `server/`.
+//
+// It was 4 (15 Hz), and that is too coarse for the one thing linear interpolation is bad at: a curve. A
+// small enemy swinging its nose to track the player had its rotation drawn as fifteen straight segments a
+// second, each ending in a step of up to 3.5° in a single frame, which is exactly what the maintainer
+// reported seeing. The error scales with the interval, so halving it halves the step — and it buys back the
+// delay too, since three snapshot intervals of buffer is 100 ms at 30 Hz where it would be 200 at 15.
+// Bandwidth is not the constraint at one player per room; the alternative (splining the samples) needs
+// velocity on the wire and is not shipped by any comparable library.
+export const SNAPSHOT_EVERY = 2;
+
+// The most fixed steps any 60 Hz clock catches up in one go — the browser's local accumulator (main.js), the
+// netsim uplink pump (netsim.js) and the room driver (server/src/netsim/driver.js) alike. Past it the excess
+// time is dropped: a host that fell behind resumes in the present rather than fast-forwarding a burst.
+export const MAX_CATCHUP_STEPS = 6;
+// …and the real frame time those hosts accept per frame: exactly the catch-up cap (6 × 1/60 is exactly 0.1 in
+// IEEE doubles). Not the 0.05 display clamp main.js uses for unfixed frames — that is a different thing.
+export const MAX_FRAME_SEC = MAX_CATCHUP_STEPS * SIM_DT;

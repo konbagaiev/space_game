@@ -5,7 +5,7 @@
 // actually play to the end — one phase that spawns aces, one phase that wins.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { evalDuelDev, withDuelRoom, applyDuelDev, duelBuild, DUEL_DEFAULT_LEVEL, DUEL_COMPONENTS } from './duel-dev.js';
+import { evalDuelDev, withDuelRoom, DUEL_DEFAULT_LEVEL } from './duel-dev.js';
 import { ACE_COUNT_DEFAULT, ACE_COUNT_MAX } from './sim-core/ace.js';
 import { LEVELS } from '../../server/src/catalog_seed.js';
 import { winConditionOf, shouldAdvance } from './sim-core/level-runner.js';
@@ -64,16 +64,5 @@ test('withDuelRoom clamps its count the same way the flag does', () => {
   assert.equal(withDuelRoom(base, 0).phases[0].aces, 1);
 });
 
-test('the forced ship is the starter gun plus the basic Repair drone', () => {
-  assert.equal(DUEL_COMPONENTS.repair, 12, 'component 12 = Repair drone (catalog_seed.js)');
-  assert.equal(DUEL_COMPONENTS.hull, 1, 'and the starter Basic hull, not a bought upgrade');
-});
-
-// With no `location` (Node), the module-level flag is off — which is exactly the state a normal page load
-// without the param is in, so this is the "changes nothing" guard for both.
-test('with the flag off, both wrappers hand the very same object back', () => {
-  const descriptor = LEVELS.find((l) => l.name === 'level-1').descriptor;
-  assert.equal(applyDuelDev(descriptor), descriptor);
-  const build = { ship: {}, loadout: {}, components: {}, skills: null };
-  assert.equal(duelBuild(build), build);
-});
+// The forced kit's ids now live in `sim-core/duel-config.test.js`, and the "flag off changes nothing" identity
+// in `sim-core/fight-spec.test.js` — the per-flag wrappers are gone (applyFightSpec / resolvePlayerBuild).

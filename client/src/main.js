@@ -6,9 +6,10 @@
 import { benchMode, isBench, BENCH_DT } from './bench.js'; // ?bench replay perf gate (flag + the fixed 1/60 step)
 import { seedSim, isSimSeeded } from './sim-core/sim-random.js'; // the seeded GAMEPLAY stream (opt-in per draw site, DECISIONS §73)
 import { catalogFromRows, shipById } from './sim-core/catalog.js'; // the one catalog flatten + id lookup, shared with server/src/sim-host.js
+import { MAX_CATCHUP_STEPS, MAX_FRAME_SEC } from './sim-core/consts.js'; // the accumulator's catch-up cap + frame clamp (shared with the uplink and the room driver)
 import { worldDigest } from './sim-core/digest.js'; // the World as one comparable value (browser↔Node oracle)
 import { evalNetsim, netsimForBrawl, netBadgeReason, connectNetsim, netsimDeferReason, isUnroomableSideMission } from './netsim.js'; // ?netsim: play a level in a SERVER-run room
-import { createNetState, applySnapshot, renderNet, clearNet } from './netsim-world.js';
+import { createNetState, applySnapshot, renderNet, clearNet, dropLocalCombatants } from './netsim-world.js';
 import { createJerkProbe } from './netsim-jerk.js'; // ?netjerk: catch every break in the DRAWN motion
 import * as THREE from 'three';
 import { loadLanguage, resolveLanguage, getLanguage, SUPPORTED, DEFAULT_LANG, t } from './i18n.js'; // language load/resolve for bootstrap + t() runtime resolver (the intro director's lines)
@@ -36,10 +37,12 @@ import { openSystemMap, closeSystemMap, isSystemMapOpen } from './systemmap-ui.j
 import { SYSTEM, ZONE_RADIUS, inActivityZone, activityZoneCenters, listSystemObjects, planetAnchor } from './sim-core/system-map.js'; // ?roam dev readout: sizing/zone/backdrop live-tuning
 import { buildTunePanel } from './tune.js'; // dev-only ?tune palette panel (lil-gui injected by bootstrap)
 import { isDev } from './dev.js'; // sticky ?dev flag (perf overlay + telemetry), single source of truth
-import { allyDev, allyDevLevel, applyAllyDev } from './ally-dev.js'; // ?ally dev flag: the wingman's arrival phase (+ the level it forces)
-import { beamDev, lancerDev, lancerDevLevel, applyLancerDev } from './beam-dev.js'; // ?beam / ?lancer dev flags: the player's beam, the pirate lancer's spawn phase (+ the level it forces)
-import { duelDevLevel, applyDuelDev, applyTraceRoom, duelBuild, duelDev } from './duel-dev.js'; // ?duel dev flag: the sparring room (+ the level it is built over, the forced ship, and the room a duel TRACE was fought in)
-import { brawlActive, brawlDev, brawlDevLevel, applyBrawlDev } from './brawl-dev.js'; // ?brawl: the bot-brawl phone load test (flag + the level it is built over)
+import { allyDevLevel } from './ally-dev.js'; // ?ally dev flag: the level it forces (the phase is a fight-spec field)
+import { lancerDevLevel } from './beam-dev.js'; // ?lancer dev flag: the level it forces (the phase and ?beam are fight-spec fields)
+import { duelDevLevel } from './duel-dev.js'; // ?duel dev flag: the level the sparring room is built over
+import { brawlActive, brawlDev, brawlDevLevel } from './brawl-dev.js'; // ?brawl: the bot-brawl phone load test (flag + the level it is built over)
+import { fightSpec, useTraceFightSpec } from './fight-spec-dev.js'; // the ONE fight spec (?ally/?lancer/?beam/?duel/?brawl, or the trace's under ?playback)
+import { applyFightSpec, resolvePlayerBuild, roomFromFightSpec } from './sim-core/fight-spec.js'; // …applied in ONE order, level + ship, by every host
 import {
   startBrawl, showBrawlSetup, brawlFrame, brawlTap, brawlDebugState,
   brawlInputAllowed, brawlNetSnapshot, brawlLinkLost, brawlLinkClosed,
@@ -1060,12 +1063,16 @@ async function startNetsim() {
     //
     const level = NETSIM.level || CATALOG.levelName;
     netLevel = level;
+    // The room runs the SAME fight spec this tab built its level and ship from (sim-host.js applies it with the
+    // same two sim-core functions), or the two ends fly different fights.
+    const spec = fightSpec();
     netLink = await connectNetsim({
       playerId: G.playerId, level, seed: NETSIM.seed,
-      ally: allyDev()?.phase || null,   // ?ally (dev): ask the room to run the wingman on that phase
-      lancer: lancerDev()?.phase || null, // ?lancer (dev): ask the room to fly that phase against pirate lancers
-      beam: beamDev() || null,            // ?beam (dev): the ROOM must mount the beam too, or it flies the real gun
-      brawl: NETSIM.brawl || null,        // ?netbrawl: the room runs the bot brawl (N per side)
+      ally: spec.ally,                    // ?ally (dev): ask the room to run the wingman on that phase
+      lancer: spec.lancer,                // ?lancer (dev): ask the room to fly that phase against pirate lancers
+      beam: spec.beam || null,            // ?beam (dev): the ROOM must mount the beam too, or it flies the real gun
+      duel: spec.duel,                    // ?duel (dev): the room builds the sparring room AND the duel kit
+      brawl: NETSIM.brawl || null,        // ?netbrawl: the room runs the bot brawl (N per side) — the COUNT, not the spec's boolean
       onWelcome: (w) => {
         netState.welcome = w;
         netState.jerk?.mark('welcome', { tick: w.tick, level: w.level, snapshotEvery: w.snapshotEvery }, perfNow());
@@ -1093,24 +1100,33 @@ async function startNetsim() {
   netConnecting = false;
 }
 
-// The LIVE per-tick body, shared by animate()'s accumulator and the ?debug stepLive hook, so the two
-// drivers cannot drift apart. `live` is RECOMPUTED here rather than captured: animate()'s own `live` is a
-// frame-local const (as is `netsimDriving`, which is why the loop publishes `G.netDriving` one line before
-// it), and a hardcoded `true` would silently make ?record/?playback write into the always-on live session
-// recorder. Keep this predicate identical to animate()'s.
-function liveTickDeps() {
-  const live = G.gameStarted && !BENCH && !REC && !rs.play && !G.netDriving; // === animate()'s `live`
+// "A real player session is on the deterministic accumulator loop" — the ONE copy, read by animate() and by
+// liveTickDeps(). It reads `G.netDriving`, which animate() publishes one line before it asks.
+const isLivePlay = () => G.gameStarted && !BENCH && !REC && !rs.play && !G.netDriving;
+
+// The per-tick deps every driver hands `stepReplayTick` (replay.js): animate()'s accumulator, the ?debug
+// stepLive hook and `window.__replay.step`. Only `capture` differs between them, so only it is a parameter.
+function makeTickDeps({ capture }) {
   return {
-    rs, keys, touchAim, dt: BENCH_DT, update,
-    capture: () => {
-      if (recCapturing) recTicks.push(snapshotInput(keys, touchAim));
-      if (live) sr.captureTick(snapshotInput(keys, touchAim)); // always-on: capture the real operator input per sim tick
-    },
+    rs, keys, touchAim, dt: BENCH_DT, update, capture,
     onTick: introTick,                          // the Level-0 intro director speaks off the SIM clock
     isCleared: () => G.returnToBase && !levelRunner.won,
     isWon: () => levelRunner.won,
     finish: finishMission,
   };
+}
+
+// The LIVE per-tick body, shared by animate()'s accumulator and the ?debug stepLive hook, so the two
+// drivers cannot drift apart. `live` is RECOMPUTED here rather than captured: animate()'s own `live` is a
+// frame-local const, and a hardcoded `true` would silently make ?record/?playback write into the always-on
+// live session recorder. It is read ONCE, when the deps are built (once per frame / per stepLive call) — not
+// per tick, which would change which ticks are recorded on the frame where `G.gameStarted` flips.
+function liveTickDeps() {
+  const live = isLivePlay();
+  return makeTickDeps({ capture: () => {
+    if (recCapturing) recTicks.push(snapshotInput(keys, touchAim));
+    if (live) sr.captureTick(snapshotInput(keys, touchAim)); // always-on: capture the real operator input per sim tick
+  } });
 }
 
 function animate() {
@@ -1141,9 +1157,8 @@ function animate() {
   // Published for the victory path: a run a ROOM is simulating is a run the room banks (DECISIONS §131).
   G.netDriving = netsimDriving;
   // Real player session → deterministic accumulator loop (always-on recording). Frame-local because the
-  // gates below need it; `liveTickDeps()` recomputes THE SAME predicate from module scope for the
-  // ?debug stepLive driver (it cannot see this const). Keep the two identical.
-  const live = G.gameStarted && !BENCH && !REC && !rs.play && !netsimDriving;
+  // gates below need it. MUST stay after the `G.netDriving = netsimDriving` line above (isLivePlay reads it).
+  const live = isLivePlay();
   if (netsimDriving) {
     // The server owns the fight: no local sim step at all. Send this frame's input, draw the world as the
     // room described it ~100 ms ago (netsim-world.js interpolates between snapshots), and run the ordinary
@@ -1165,6 +1180,13 @@ function animate() {
     // hangar while the player reads a briefing.
     if (netLink && G.gameStarted && netRunAt !== G.gameStartTime) {
       netRunAt = G.gameStartTime;
+      // A run the ROOM drives has no LOCAL combatants. This tab's own reset() still ran the level script's
+      // first phase, and a phase that spawns on ENTRY (a duel's `aces: N`, an `ally: true` phase) put real
+      // local ships in the World that the room never described — `?duel&netsim=1` drew 2 local aces on top of
+      // the room's 2. Drop them before the room's first snapshot (ghosts carry a network id and stay). A no-op
+      // for every campaign level, whose first phase spawns nothing on entry. Retry runs reset() again, so
+      // this fires again before `restart`.
+      dropLocalCombatants(world, netState);
       // A fresh LINK starts; an existing one restarts its world. Keyed to `netStarted` (per link) rather
       // than to whether we have ever seen a run, because a level change reconnects mid-session.
       const pose = world.runKeepPlayer ? {
@@ -1230,7 +1252,7 @@ function animate() {
     if (netLink && netStarted && drawing) {
       // Input only while the player is actually at the controls. A dead ship must not fire a held key, and
       // a menu is not flying — the room hears the silence and lets go of the controls on its own.
-      if (flying) netLink.pump(Math.min(rawSec, 0.1), keys, touchAim);
+      if (flying) netLink.pump(Math.min(rawSec, MAX_FRAME_SEC), keys, touchAim);
       renderNet(world, netState, performance.now());
       setGrabTarget(netState.grabTarget); // the room owns the Grab; this is only its beam
       renderTick(dt);
@@ -1242,7 +1264,7 @@ function animate() {
     // or apply (playback) exactly one tick per step. Only runs once armed (record: after "Start"; playback:
     // once models loaded) — before that the ship sits idle with the real model on screen (no placeholder flash).
     if ((recCapturing || rs.armed || live) && !G.paused && !G.mapOpen) {
-      replayAcc += Math.min(rawSec, 0.1); // clamp: after a stall/tab-throttle, don't fast-forward a huge burst
+      replayAcc += Math.min(rawSec, MAX_FRAME_SEC); // clamp: after a stall/tab-throttle, don't fast-forward a huge burst
       let steps = 0;
       // The per-tick body is shared with window.__replay.step(n) and __game.stepLive(n) (replay.js
       // stepReplayTick) so the drivers can no longer drift apart. Built once per frame: `recCapturing` and
@@ -1253,7 +1275,7 @@ function animate() {
       // so a live session inheriting that stale `rs.done` would never step — the ship never centers and
       // controls are dead until a refresh builds a fresh rs. Ignore rs.done when rs.play is null (live):
       // for ?playback rs.play is truthy so freeze-on-exhaustion is unchanged.
-      while (replayAcc >= BENCH_DT && steps < 6 && !(rs.play && rs.done)) {
+      while (replayAcc >= BENCH_DT && steps < MAX_CATCHUP_STEPS && !(rs.play && rs.done)) {
         if (stepReplayTick(tickDeps) === 'stop') break; // exhausted trace / stalled return-home: no time consumed
         replayAcc -= BENCH_DT;
         steps++;
@@ -1786,8 +1808,14 @@ function beginRecordCapture() {
   if (recCapturing) return;
   recSeed = (Date.now() >>> 0);                 // the one wall-clock touch — captured into the trace (determinism preserved)
   seedSim(recSeed);                              // install the sim's seeded stream (gameplay draws only)
-  // The ship actually flown (loadout/components AND skills), via the one helper the live recorder shares.
-  recBuild = flownBuild({ activeShip: G.activeShip, shipName: G.currentShipName, shipByName: CATALOG.shipByName });
+  // The ship actually flown (loadout/components AND skills), via the one helper the live recorder shares —
+  // with the fight spec's overrides (?beam's gun, ?duel's kit) applied by the same `resolvePlayerBuild` the
+  // ship builder used. `ship` is only there for the beam's no-loadout fallback; it is not trace data.
+  const { ship: _recShip, ...recFlown } = resolvePlayerBuild({
+    ...flownBuild({ activeShip: G.activeShip, shipName: G.currentShipName, shipByName: CATALOG.shipByName }),
+    ship: CATALOG.shipByName.get(G.currentShipName),
+  }, fightSpec());
+  recBuild = recFlown;
   G.gameStarted = true;
   replayAcc = 0;
   reset();                                        // position the player + start REC.level from tick 0 (seeded)
@@ -1801,7 +1829,8 @@ function stopRecordSession() {
   if (!recCapturing) return;
   recCapturing = false;
   const id = `${REC.level}-${recSeed.toString(36)}`;
-  const trace = makeTrace({ id, level: REC.level, seed: recSeed, dt: BENCH_DT, ...recBuild, ticks: recTicks });
+  const trace = makeTrace({ id, level: REC.level, seed: recSeed, dt: BENCH_DT, ...recBuild,
+    room: roomFromFightSpec(fightSpec()), ticks: recTicks });   // the fight spec, so ▶ play rebuilds this fight
   try { localStorage.setItem(`replay:${id}`, JSON.stringify(trace)); localStorage.setItem('replay:last', JSON.stringify(trace)); } catch {}
   downloadTrace(trace, `${id}.json`);
   showRecordDone(id, traceTickCount(trace));   // v2 traces carry packed runs, not a flat ticks array
@@ -1823,20 +1852,24 @@ export function beginLiveSession() {
   flushSession('quit');
   const seed = (Date.now() >>> 0);
   seedSim(seed); // install the seeded gameplay stream for THIS session
-  // THE SHIP THAT WAS ACTUALLY FLOWN, not the one the account has parked. Under ?duel the player flies
-  // `duelBuild`'s forced starter kit, so recording the account's gear would tell a re-simulation to rebuild
-  // the wrong ship and the fight diverges on tick one: a dev flag that changes the SHIP has to change what
-  // the recording says the ship was, or the recording is of a fight nobody fought. `duelBuild` is a strict
-  // no-op with the flag off — the same object comes back out. (`?beam`'s beamLoadout has the same hole; it
-  // is named as known in SUMMARY rather than fixed here.)
-  // `flownBuild` (replay.js) is the one shared copy of the "is the built ship the active ship" check.
-  const built = duelBuild(flownBuild({ activeShip: G.activeShip, shipName: G.currentShipName, shipByName: CATALOG.shipByName }));
+  // THE SHIP THAT WAS ACTUALLY FLOWN, not the one the account has parked. A dev flag that changes the SHIP
+  // (?duel's forced starter kit, ?beam's gun) has to change what the recording says the ship was, or a
+  // re-simulation rebuilds the wrong ship and the fight diverges on tick one. So the recorder applies the SAME
+  // `resolvePlayerBuild` the ship builder did — identity with no flag set, the same object back out.
+  // `flownBuild` (replay.js) is the one shared copy of the "is the built ship the active ship" check; `ship`
+  // rides along only for the beam's no-loadout fallback, and `sr.begin` does not keep it.
+  const spec = fightSpec();
+  const built = resolvePlayerBuild({
+    ...flownBuild({ activeShip: G.activeShip, shipName: G.currentShipName, shipByName: CATALOG.shipByName }),
+    ship: CATALOG.shipByName.get(G.currentShipName),
+  }, spec);
   sr.begin({
     seed, level: CATALOG.levelName || 'level-0', shipId: built.shipId,   // the SEED NAME (level-N), stashed at each CATALOG.level set (C2a)
     skills: built.skills, loadout: built.loadout, components: built.components,
-    // The ROOM, when this is not the plain level — the one parameter that defines a duel, carried on the
-    // trace so the referee can rebuild it (docs/plans/2026-09-01-1845-duel-referee.md).
-    room: duelDev() ? { kind: 'duel', aces: duelDev().count } : null,
+    // The FIGHT SPEC, when this is not the plain level: `{ kind:'duel', aces }` (+ any ally/lancer/beam) or
+    // `{ kind:'dev', … }`, else null — carried on the trace so playback and the referee rebuild the same
+    // fight (DECISIONS §170; a plain duel is exactly `{ kind:'duel', aces }`, as it always was).
+    room: roomFromFightSpec(spec),
     dt: BENCH_DT,
   });
   replayAcc = 0;
@@ -1854,8 +1887,9 @@ export function flushSession(outcome, { beacon = false, final = true } = {}) {
   // end-of-tick state, before the trace is assembled — see docs/plans/2026-09-01-1845-duel-referee.md §3.1.
   // Both duel anchors coincide with a final flush in the same tick (`cleared` → flushSession('win'),
   // `death` → flushSession('death')), so one seal site is enough. Costs one digest per session, and only
-  // when a room is set: zero cost for every campaign session.
-  if (sr.active && sr.room && !sr.anchor && duelAnchorReached(world)) {
+  // when the room is a DUEL: zero cost for every campaign session, and for a `kind:'dev'` fight too (the referee
+  // judges duels only, and nothing pays for a digest it will not use).
+  if (sr.active && sr.room?.kind === 'duel' && !sr.anchor && duelAnchorReached(world)) {
     sr.sealAnchor({ tick: sr.tickCount, ...worldDigest(world) });
   }
   const payload = sr.flush(outcome, {
@@ -2123,8 +2157,11 @@ if (REC || rs.play) {
     // to one number, plus how many seeded RNG draws this run consumed. server/tools/sim-replay.mjs computes
     // the same thing headlessly from the same trace, and 36-sim-divergence asserts the two agree.
     digest: () => worldDigest(world),
-    // `armed` is the models-ready gate: the ship .glb sets mesh.userData.noseZ/tailZ (where bullets spawn), so
-    // stepping before it resolves changes the sim — automated stepping MUST wait on it.
+    // `armed` is the models-ready gate (watchModelsReady): playback holds on its idle frame until the real
+    // ship .glb has loaded, so it opens on the real ship and not the placeholder primitive. It no longer guards
+    // the SIMULATION — the muzzle (`noseZ`) is the catalog's baked `model.muzzle` (sim-core/ship-entity.js), not
+    // the mesh's — but the accumulator still only steps once armed, so automated stepping waits on it too, to
+    // start from the same point the real playback does.
     status: () => ({ recording: recCapturing, armed: rs.armed, ticks: recTicks.length, playIndex: rs.index, playDone: rs.done, total: rs.trace ? rs.trace.ticks.length : 0 }),
     // The ?playback&finish lifecycle (for tests / console): has the sector cleared into a flight home, and
     // did that flight end in a win. 22-trace-replay's terminal-state check reads this.
@@ -2139,14 +2176,7 @@ if (REC || rs.play) {
     // capture is caller-supplied.
     step(n = 1) {
       if (!isSimSeeded()) return this.status(); // record: not started yet (call begin() first); playback seeds on arm
-      const tickDeps = {
-        rs, keys, touchAim, dt: BENCH_DT, update,
-        capture: () => { if (recCapturing) recTicks.push(snapshotInput(keys, touchAim)); },
-        onTick: introTick,
-        isCleared: () => G.returnToBase && !levelRunner.won,
-        isWon: () => levelRunner.won,
-        finish: finishMission,
-      };
+      const tickDeps = makeTickDeps({ capture: () => { if (recCapturing) recTicks.push(snapshotInput(keys, touchAim)); } });
       for (let i = 0; i < n; i++) if (stepReplayTick(tickDeps) === 'stop') break;
       return this.status();
     },
@@ -2204,6 +2234,10 @@ async function bootstrap() {
         document.body.innerHTML = `<pre style="color:#ff6b6b;font:14px/1.5 monospace;padding:24px">Playback failed:\n- ${problems.join('\n- ')}</pre>`;
         return;
       }
+      // The fight is the one the TRACE was fought in, not the URL's: from here on `fightSpec()` is the trace's
+      // spec, so the level below and every `buildPlayerFor` (bootstrap's idle ship, the recorded ship) rebuild
+      // it. Before any level apply or player build, on purpose.
+      useTraceFightSpec(rs.trace);
     }
     // ?record forces the requested level; ?playback uses the recorded level; `?ally&level=N` and
     // `?lancer&level=N` force one too (same `level` param, same normalization — a dev test flight must not
@@ -2235,14 +2269,12 @@ async function bootstrap() {
     // The ONE flatten shared with the server's buildCatalog (sim-core/catalog.js): fills CATALOG in place —
     // its identity is load-bearing (`world.catalog = CATALOG`). Ships come out id-ordered.
     catalogFromRows({ weapons, components, ships }, CATALOG);
-    // ?ally / ?lancer / ?duel (dev): inject the wingman's arrival phase, swap a phase's pool for pirate
-    // lancers, and/or replace the whole script with the sparring room. Each is a strict no-op with its own
-    // flag off (the same object back out); `?duel` runs last because it discards what the others wrote.
-    // …and under ?playback of a DUEL trace the URL carries no ?duel at all, so the room is rebuilt from
-    // the recording itself — otherwise the admin "▶ play" link on a duel row replays the plain base level.
-    // ?brawl wraps everything: it replaces the whole script with the bot-brawl room (a strict no-op off).
-    CATALOG.level = applyBrawlDev(applyTraceRoom(applyDuelDev(applyLancerDev(applyAllyDev(level.descriptor))),   // ?duel is LAST of these: it replaces the phase script the other two edit
-                                   rs.play ? rs.trace : null));
+    // The fight spec's LEVEL half, in the one order (sim-core/fight-spec.js): ?brawl replaces everything;
+    // otherwise ?ally's arrival phase, then ?lancer's pirate-lancer pool, then ?duel LAST (it discards the
+    // script the other two edit). With no flag set the SAME descriptor comes back out. Under ?playback the
+    // spec is the TRACE's (useTraceFightSpec above), so ▶ play on a duel or dev row rebuilds that fight even
+    // though its URL carries none of the flags.
+    CATALOG.level = applyFightSpec(level.descriptor, fightSpec());
     CATALOG.levelName = level.name; // the SEED NAME (level-N) — the trace level for session recording
 
     const map = await fetchJson(`/api/maps/${level.descriptor.map}`); // the level chooses its map

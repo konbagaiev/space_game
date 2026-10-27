@@ -7,7 +7,7 @@
 // headless referee. `won` needs a mouse click and a dock, which an input trace cannot carry.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { withDuelRoom, DUEL_PHASES, duelAnchorReached } from './duel-config.js';
+import { withDuelRoom, DUEL_PHASES, duelAnchorReached, DUEL_LOADOUT, DUEL_COMPONENTS, withDuelKit } from './duel-config.js';
 import { winConditionOf, shouldAdvance } from './level-runner.js';
 import { ACE_COUNT_MAX } from './ace.js';
 
@@ -71,4 +71,25 @@ test('withDuelRoom clamps the ace count at both ends', () => {
   assert.equal(withDuelRoom(baseLevel(), 99).phases[0].aces, ACE_COUNT_MAX);
   assert.equal(withDuelRoom(baseLevel(), 0).phases[0].aces, 1);
   assert.equal(withDuelRoom(null, 2), null, 'and a missing descriptor is handed straight back');
+});
+
+// THE DUEL KIT (moved here from duel-dev.js with the kit itself). Catalog ids, matching catalog_seed.js.
+test('the forced ship is the starter gun plus the basic Repair drone', () => {
+  assert.equal(DUEL_COMPONENTS.repair, 12, 'component 12 = Repair drone (catalog_seed.js)');
+  assert.equal(DUEL_COMPONENTS.hull, 1, 'and the starter Basic hull, not a bought upgrade');
+  assert.deepEqual(DUEL_LOADOUT.mounts.map((m) => m.weapon), [1, 3], 'Basic kinetic + Rocket, as the aces carry');
+});
+
+test('withDuelKit forces loadout/components/no skills, keeps the hull, and never mutates its input', () => {
+  const ship = { name: 'Scout' };
+  const build = { ship, shipId: 2, loadout: { mounts: [{ group: 'gun', weapon: 12 }] }, components: { hull: 7 }, skills: { mobility: 3 } };
+  const out = withDuelKit(build);
+  assert.notEqual(out, build);
+  assert.equal(out.loadout, DUEL_LOADOUT);
+  assert.equal(out.components, DUEL_COMPONENTS);
+  assert.equal(out.skills, null, 'no skills — the duel is about the flying');
+  assert.equal(out.ship, ship, 'the hull you fly is kept');
+  assert.equal(out.shipId, 2);
+  assert.equal(build.loadout.mounts[0].weapon, 12, 'the input is untouched');
+  assert.deepEqual(build.skills, { mobility: 3 });
 });

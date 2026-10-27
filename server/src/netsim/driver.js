@@ -6,14 +6,15 @@
 //
 // **Catch-up is bounded.** If the event loop stalls — GC, a slow query on the same process — the naive fix
 // is to step however many ticks the elapsed time allows. That turns a hiccup into a spiral: a long stall
-// queues a burst of steps, which takes longer, which queues more. The browser's own accumulator caps at 6
-// steps per frame for exactly this reason (`main.js`), so this caps too, and drops the excess time on the
+// queues a burst of steps, which takes longer, which queues more. The browser's own accumulator caps at the same
+// MAX_CATCHUP_STEPS per frame for exactly this reason (`main.js`), so this caps too, and drops the excess time on the
 // floor: a room that fell behind resumes in the present rather than fast-forwarding the fight.
 import { performance } from 'node:perf_hooks';
-import { SIM_DT } from '../../../client/src/sim-core/consts.js';
+import { SIM_DT, MAX_CATCHUP_STEPS } from '../../../client/src/sim-core/consts.js';
 import { health } from './health.js';
 
-export const MAX_CATCHUP_STEPS = 6;
+// The cap is shared with the browser's accumulator and the uplink pump (`sim-core/consts.js`); re-exported here.
+export { MAX_CATCHUP_STEPS };
 
 // A gap between pumps past this is not jitter, it is the process being busy with something else — and it is
 // felt as the whole world freezing and then jumping. Six ticks at 60 Hz.

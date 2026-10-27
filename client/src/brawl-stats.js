@@ -1,6 +1,7 @@
 // The bot brawl's numbers: frame-time statistics, the per-window table, the end rule, the result object
 // and the card's text. Pure (no DOM, no Three), so every rule here is unit-tested (`brawl-stats.test.js`).
 // The browser half that feeds it is `brawl-host.js`.
+import { TICK_HZ } from './sim-core/consts.js';
 
 const r1 = (x) => Math.round(x * 10) / 10;
 const r2 = (x) => Math.round(x * 100) / 100;
@@ -30,7 +31,7 @@ export const windowOf = (tick, windowTicks) => (tick > 0 ? Math.floor((tick - 1)
 // One row per 10-sim-second window, keyed to SIM time so two devices are compared over the same stretch of
 // the same fight. Each sample is `{ ms, tick, inFrame }`. The trailing window is kept and marked `partial`
 // when the run ended inside it. `alive` is joined in by the caller from the fingerprint.
-export function windowStats(samples, windowTicks, ticksPerSec = 60) {
+export function windowStats(samples, windowTicks, ticksPerSec = TICK_HZ) {
   const groups = new Map();
   let maxTick = 0;
   for (const s of samples) {

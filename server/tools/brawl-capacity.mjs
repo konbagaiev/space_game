@@ -6,10 +6,10 @@
 //
 // For each (N, K): K brawl rooms of N v N are created exactly the way a `?netbrawl` join creates them
 // (`createRoom({ brawl: N })`), each armed by one input, and all K are stepped ROUND-ROBIN on this one thread
-// for `sec × 60` ticks. Every `stepOnce` is timed, and on snapshot ticks so is `JSON.stringify(takeSnapshot())`
+// for `sec × TICK_HZ` ticks. Every `stepOnce` is timed, and on snapshot ticks so is `JSON.stringify(takeSnapshot())`
 // (its time and its length). One table row per (N, K):
-//   step ms avg / p95 / max · snap ms avg / max · snapshot KB avg / max · KB/s per client (avg bytes × 30)
-//   process ms per wall second per room = 60 × stepAvg + 30 × snapAvg
+//   step ms avg / p95 / max · snap ms avg / max · snapshot KB avg / max · KB/s per client (avg bytes × snapshot Hz)
+//   process ms per wall second per room = TICK_HZ × stepAvg + (TICK_HZ / SNAPSHOT_EVERY) × snapAvg (60 / 30 today)
 //   rooms per core = floor(1000 / that), plus the same figure from the p95 step (a pessimistic bound)
 // …and the same for the FIRST 10 SIM-SECONDS only, because the fight thins out fast (at N = 100 it is
 // ~16 v 3 by 60 s) and full load is what a capacity number has to survive.
@@ -22,6 +22,9 @@
 import { performance } from 'node:perf_hooks';
 import { createRoom } from '../src/netsim/room.js';
 import { BRAWL_WINDOW_TICKS } from '../../client/src/sim-core/brawl.js';
+import { TICK_HZ, SNAPSHOT_EVERY } from '../../client/src/sim-core/consts.js';
+
+const SNAP_HZ = TICK_HZ / SNAPSHOT_EVERY;   // snapshots per wall second (30 today)
 
 const MAX_SHIPS = 800;   // K × N cap
 
@@ -44,10 +47,10 @@ function summarize(step, snapMs, bytes) {
   const stepAvg = mean(step), stepP95 = pct(s, 95), stepMax = s[s.length - 1] || 0;
   const snapAvg = mean(snapMs), snapMax = Math.max(0, ...snapMs);
   const kbAvg = mean(bytes) / 1024, kbMax = Math.max(0, ...bytes) / 1024;
-  const perRoom = 60 * stepAvg + 30 * snapAvg;
-  const perRoomP95 = 60 * stepP95 + 30 * snapAvg;
+  const perRoom = TICK_HZ * stepAvg + SNAP_HZ * snapAvg;
+  const perRoomP95 = TICK_HZ * stepP95 + SNAP_HZ * snapAvg;
   return {
-    stepAvg, stepP95, stepMax, snapAvg, snapMax, kbAvg, kbMax, kbps: kbAvg * 30, perRoom,
+    stepAvg, stepP95, stepMax, snapAvg, snapMax, kbAvg, kbMax, kbps: kbAvg * SNAP_HZ, perRoom,
     roomsPerCore: perRoom > 0 ? Math.floor(1000 / perRoom) : Infinity,
     roomsPerCoreP95: perRoomP95 > 0 ? Math.floor(1000 / perRoomP95) : Infinity,
   };
@@ -61,7 +64,7 @@ function run(n, k) {
   });
   const all = { step: [], snapMs: [], bytes: [] };
   const early = { step: [], snapMs: [], bytes: [] };
-  const ticks = SEC * 60;
+  const ticks = SEC * TICK_HZ;
   for (let t = 0; t < ticks; t++) {
     for (const r of rooms) {
       const inEarly = r.world.brawl.ticks < BRAWL_WINDOW_TICKS;

@@ -4,7 +4,8 @@
 // fight end to end: the level is rebuilt, Take off drops you into it instead of into roam, two hostile
 // ships fly the wingman's pilot code, they get bodies in the scene in the hostile livery, they shoot at
 // you, and the player is holding the forced starter gun + repair drone rather than whatever the account
-// has equipped. And the half that matters more than any of it: with the flag OFF nothing changes.
+// has equipped. And the half that matters more than any of it: with the flag OFF nothing changes. The last
+// pass flies the same room under `?netsim=1`, where the SERVER builds it.
 export const name = '47-duel-room';
 
 // Boot a fresh page on a given query string and get past whichever launch screen this level lands on
@@ -166,4 +167,30 @@ export default async function ({ page, assert, shot }) {
   assert.ok(pd.engagedTicks > 0,
     `an ace actually engaged an incoming rocket (${pd.engagedTicks} ticks of 3600, ${pd.fired} rockets fired)`);
   assert.ok(pd.shotDown > 0, `and at least one was shot out of the air (${pd.shotDown}/${pd.fired})`);
+
+  // ---- ?duel&netsim=1: the ROOM runs the duel (audit B4.2) ----
+  // The handshake forwards `duel=<aces>`, the room builds the duel room AND the duel kit, and the tab drops
+  // the two LOCAL aces its own reset() spawned on the duel phase's entry — or the screen shows four ships
+  // (two local + two room ghosts) where the old code showed the local aces over a plain level's pirates.
+  // This pass waits on the WALL CLOCK, and that is the honest thing here: a room is driven by its own 60 Hz
+  // timer and `stepSim` does not apply under netsim (same reason as 37-netsim's SLOW).
+  await boot(page, 'debug&duel&netsim=1');
+  await page.waitForFunction('!!(window.__netsim && window.__netsim.connected && window.__netsim.tick > 0'
+    + ' && window.__game.enemyCount >= 2)', null, { timeout: 60000 });
+  await page.waitForTimeout(1000);
+  const net = await page.evaluate(() => {
+    const g = window.__game;
+    return {
+      enemies: g.enemies.length,
+      pilots: g.enemies.filter((e) => e.pilot).length,
+      enemyTotal: window.__netsim.welcome ? window.__netsim.welcome.enemyTotal : null,
+      roomLevel: window.__netsim.welcome ? window.__netsim.welcome.level : null,
+      weapons: g.player.mounts.map((m) => m.weapon.id),
+    };
+  });
+  assert.equal(net.enemies, 2, `exactly the room's two aces on screen, no local copies (saw ${net.enemies})`);
+  assert.equal(net.pilots, 2, 'and both are aces, not a plain level\'s pirates');
+  assert.equal(net.enemyTotal, 2, `the ROOM is fighting the duel (welcome enemyTotal ${net.enemyTotal})`);
+  assert.deepEqual(net.weapons, [1, 3], 'the tab flies the duel kit too (Basic kinetic + Rocket)');
+  await shot('duel-room-netsim');
 }

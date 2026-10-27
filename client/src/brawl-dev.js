@@ -34,7 +34,6 @@
 // Must NOT import `state.js` — `state.js` imports this file (for the tier override).
 import {
   BRAWL_N_MIN, BRAWL_N_MAX, BRAWL_N_DEFAULT, BRAWL_LEVEL, BRAWL_SEC_DEFAULT, BRAWL_SEC_MIN, BRAWL_SEC_MAX,
-  withBrawlRoom,
 } from './sim-core/brawl.js';
 import { TIER_ORDER } from './graphics.js';
 
@@ -71,10 +70,6 @@ export function brawlDev() { return BRAWL_DEV; }
 export function brawlActive() { return !!BRAWL_DEV; }
 // The level the brawl is built over, or null with the flag off.
 export function brawlDevLevel() { return BRAWL_DEV ? BRAWL_LEVEL : null; }
-// Wrap a level descriptor: the brawl room with the flag on, the SAME object with it off.
-export function applyBrawlDev(descriptor, dev = BRAWL_DEV) {
-  return dev ? withBrawlRoom(descriptor) : descriptor;
-}
 // The setup panel's typed bot count: digits only, clamped to BRAWL_N_MIN..BRAWL_N_MAX. Anything that is not a
 // number (empty, letters, a minus sign) keeps `fallback` — the count the panel already showed — so a stray
 // keystroke never resets the choice. Pure; brawl-host.js calls it on Enter / blur / Start.

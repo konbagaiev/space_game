@@ -12,8 +12,9 @@
 // `G.activeShip.loadout`, and in a room it is the row just read out of the database. Returns a NEW loadout.
 export const BEAM_WEAPON_ID = 12;
 
-// Swap every GUN mount onto the Charged beam. Unconditional — the FLAG lives in `beam-dev.js`, which is the
-// browser's concern; a room is told `beam=1` on the handshake instead. A loadout with no gun mount comes
+// Swap every GUN mount onto the Charged beam. Unconditional — the FLAG is the fight spec's `beam` field, and
+// `fight-spec.js resolvePlayerBuild` is the one caller (the tab parses it from the URL, a room is told `beam=1`
+// on the handshake, a replay reads it from the trace). Idempotent: a beam already on the gun stays the beam. A loadout with no gun mount comes
 // back with its mounts unchanged (still a new object).
 export function withBeamGun(loadout) {
   if (!loadout) return loadout;

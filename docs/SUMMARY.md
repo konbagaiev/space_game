@@ -3,7 +3,7 @@
 > A living snapshot of "how things are now". Updated with every change.
 > Change history is in [CHANGELOG.md](CHANGELOG.md). Rationale is in [DECISIONS.md](DECISIONS.md).
 
-**Updated:** 2026-10-26 (**Level reward and mission location have one source each** — a component reward is owned when some slot holds exactly its id or it is in the stash (an equipped Repair drone II no longer hides the Level 2 crate, DECISIONS §169); a server test pins each `lastKillDrop` to the next level's briefing grant; `missions.js` reads its centres from `ANCHORS` (duplication audit C5, C6).) Previously: 2026-10-24 (**Ship ids are fixed in the seed; one catalog builder** — every `SHIPS` row carries an explicit id equal to prod's (1, 132, 141, 368, 369, 371, 372, 374, 375, 2329), upserted `ON CONFLICT (id)`; `reconcileShipIds` moves a database that numbered them differently on every boot (no-op on prod) and `ships_id_seq` is set to the max id; the server's `buildShip` really matches `shipId`; both hosts flatten the catalog through `client/src/sim-core/catalog.js catalogFromRows` with ships id-ordered; stash rows carry `id/rarity/color/modelUrl/modelUrlHigh` (duplication audit B3, C8, DECISIONS §168). Earlier today: **Shared client/server contracts** — the skill list (`sim-core/skills.js`), the equipment slot lists and the sell rate (`sim-core/shop-rules.js`) and the weapon-type → fire-group map (`shop-slots.js`, derived into the server's `WEAPON_GROUP`; an unknown type is refused at `/equip` with 409, DECISIONS §167) each have ONE source; `POST /api/games` also returns the full `progression`, which the client adopts; the Character XP bar uses `liveProgress` like the HUD; the starter gun and grab/shield ids are read from the starter ship row (duplication audit C1/C2/C3/C4/C7). Earlier today: **Shop: engine and thruster lines say "Power"** — their raw catalog power no longer shares the "Accel"/"Turn" labels with the ship's resulting stats. Earlier today: **Drift-fix Phase 5** — `?record` captures skills via the shared `flownBuild()` (`replay.js`, audit B5); a netsim room is handed the account record so `ownsReward` works there (B6); a reward **in the stash** counts as owned like an equipped one (`stashRefs` on the active-ship record, DECISIONS §166) — selling it brings the L1/L2 crate back.) Previously: 2026-10-23 (**Docs sweep after drift-fix Phases 1–4** — Kinetic skill text corrected (+5% damage on every non-rocket weapon; no aim-assist); the netsim room's `activeShip` claim corrected (not passed — audit B6, fixed 2026-10-24) and `?record`'s missing skills noted (B5, fixed 2026-10-24); `s3:DeleteObject` on `recordings/sessions/*` now granted, so a prod `reset --all` can run.) Previously: 2026-10-22 (**Server economy guards** — the side-mission card's est. reward/XP is computed from the phases × ship catalog (≈3510 / ≈2750); `/buy` refuses price-0 and `buyable:false` rows (`isShopItem`, DECISIONS §164); `reset --all` deletes S3 session traces then truncates `gameplay_sessions` too, and without S3 creds refuses unless given `--no-s3` (§165); `NEW_PLAYER_DEFAULTS` is the one new-player baseline. Earlier today: **Loadout shows the ship you fly** — the stats bar reads the real build (`makePlayer`, skills included) and gains a **Top speed** stat; a skill spend rebuilds the ship at once; the Owned badge is a green pill; dead shop CSS removed; replay docs corrected — record URL, trace v4 shape, storage.) Previously: 2026-10-20 (**One launch gate** — Map Autopilot respects it, the can't-launch note shows once; `canLaunch()` in shop.js is the only copy of the predicate. Earlier today: **Nothing runs behind the base menu** — every way into the menu goes through `enterMenu()`, which stops the fight; launches leave through `leaveMenu()`; **Take off sits at one spot on every base stage** — its own full-width `#mainwin` grid row.) Previously: 2026-10-19 (**Mobility card text names what it does** — acceleration, turn rate, top-speed cap. Earlier today: **Take off centred on screen on Character/Craft.**) Previously: 2026-10-07 (**Server-run brawl measured on prod** — capacity and bandwidth numbers in the netsim section and `brawl-perf-findings.md` §6.) Previously: 2026-10-06 (**A server-run bot brawl (`?netbrawl=N`) and in-process server load metrics** — the same N v N fight simulated by a netsim room, the room's own step/snapshot/bytes/event-loop/CPU numbers on the card, in `perf_samples` (`srv`) and in a 10 s `evt: 'netsim-room'` log line; max 2 brawl rooms per process, 330 s backstop, 8 MB slow-link guard; `server/tools/brawl-capacity.mjs` for rooms-per-core; netsim aces now render (`ace: 1` descriptor). DECISIONS §161. Earlier today: **The brawl setup takes a typed bot count**; perf findings recorded in `docs/plans/2026-10-06-brawl-perf-findings.md`; brief for a server-run brawl in `docs/plans/2026-10-06-server-brawl-load-test.md`. 2026-10-05: **Battle sounds only from what is on screen; the radar is opaque** — DECISIONS §160. Earlier: **Double-sided ship materials draw in one pass on every tier** — the canopy glass was drawn twice per ship and re-ran three.js's program lookup each pass; −27 % render CPU at 50v50, no visible change, DECISIONS §159. Earlier: **The Sentinel pilot engages within 150 u of HIMSELF, turns and fights when chased to the arena edge (cornered), and stops on a still escort point instead of orbiting it** — wingman, duel aces and brawl bots alike, DECISIONS §158. Earlier: **The bot brawl fight is held over the home station** — a station `anchor` + 100 u leash per bot. 2026-10-04: **A bot brawl you can run on a phone (`?brawl`)** — N v N Sentinel bots over the home station, 60 s of wall time, per-window frame stats + a result card + `/api/perf` telemetry, DECISIONS §157. Also **the Sentinel pilot owns its reload stagger** — wingman and aces fire on one schedule from a private stream, `SENTINEL_PILOT` profile, DECISIONS §156. Before that, 2026-09-11: **The Sentinel pilot aims like a person, and a retreat actually leaves the fight.**
+**Updated:** 2026-10-27 (**One fight spec, one player build** — the dev fight flags (`?ally`/`?lancer`/`?beam`/`?duel`/`?brawl`) are one spec applied by `sim-core/fight-spec.js` (`applyFightSpec` for the level, `resolvePlayerBuild` for the ship) in every host; `?duel&netsim=1` works (handshake `duel=<aces>`, the tab drops its own entry-spawned aces); a won duel never advances campaign progress (`campaign: false`); `?lancer` survives a level advance; `trace.room` records the whole spec (`kind:'dev'`, rows `dev:level-N`) and `?beam` is recorded; netsim timing constants live in `sim-core/consts.js`; one `makeTickDeps`/`isLivePlay` in `main.js` (duplication audit B4, B5, C12, C13; DECISIONS §170).) Previously: 2026-10-26 (**Level reward and mission location have one source each** — a component reward is owned when some slot holds exactly its id or it is in the stash (an equipped Repair drone II no longer hides the Level 2 crate, DECISIONS §169); a server test pins each `lastKillDrop` to the next level's briefing grant; `missions.js` reads its centres from `ANCHORS` (duplication audit C5, C6).) Previously: 2026-10-24 (**Ship ids are fixed in the seed; one catalog builder** — every `SHIPS` row carries an explicit id equal to prod's (1, 132, 141, 368, 369, 371, 372, 374, 375, 2329), upserted `ON CONFLICT (id)`; `reconcileShipIds` moves a database that numbered them differently on every boot (no-op on prod) and `ships_id_seq` is set to the max id; the server's `buildShip` really matches `shipId`; both hosts flatten the catalog through `client/src/sim-core/catalog.js catalogFromRows` with ships id-ordered; stash rows carry `id/rarity/color/modelUrl/modelUrlHigh` (duplication audit B3, C8, DECISIONS §168). Earlier today: **Shared client/server contracts** — the skill list (`sim-core/skills.js`), the equipment slot lists and the sell rate (`sim-core/shop-rules.js`) and the weapon-type → fire-group map (`shop-slots.js`, derived into the server's `WEAPON_GROUP`; an unknown type is refused at `/equip` with 409, DECISIONS §167) each have ONE source; `POST /api/games` also returns the full `progression`, which the client adopts; the Character XP bar uses `liveProgress` like the HUD; the starter gun and grab/shield ids are read from the starter ship row (duplication audit C1/C2/C3/C4/C7). Earlier today: **Shop: engine and thruster lines say "Power"** — their raw catalog power no longer shares the "Accel"/"Turn" labels with the ship's resulting stats. Earlier today: **Drift-fix Phase 5** — `?record` captures skills via the shared `flownBuild()` (`replay.js`, audit B5); a netsim room is handed the account record so `ownsReward` works there (B6); a reward **in the stash** counts as owned like an equipped one (`stashRefs` on the active-ship record, DECISIONS §166) — selling it brings the L1/L2 crate back.) Previously: 2026-10-23 (**Docs sweep after drift-fix Phases 1–4** — Kinetic skill text corrected (+5% damage on every non-rocket weapon; no aim-assist); the netsim room's `activeShip` claim corrected (not passed — audit B6, fixed 2026-10-24) and `?record`'s missing skills noted (B5, fixed 2026-10-24); `s3:DeleteObject` on `recordings/sessions/*` now granted, so a prod `reset --all` can run.) Previously: 2026-10-22 (**Server economy guards** — the side-mission card's est. reward/XP is computed from the phases × ship catalog (≈3510 / ≈2750); `/buy` refuses price-0 and `buyable:false` rows (`isShopItem`, DECISIONS §164); `reset --all` deletes S3 session traces then truncates `gameplay_sessions` too, and without S3 creds refuses unless given `--no-s3` (§165); `NEW_PLAYER_DEFAULTS` is the one new-player baseline. Earlier today: **Loadout shows the ship you fly** — the stats bar reads the real build (`makePlayer`, skills included) and gains a **Top speed** stat; a skill spend rebuilds the ship at once; the Owned badge is a green pill; dead shop CSS removed; replay docs corrected — record URL, trace v4 shape, storage.) Previously: 2026-10-20 (**One launch gate** — Map Autopilot respects it, the can't-launch note shows once; `canLaunch()` in shop.js is the only copy of the predicate. Earlier today: **Nothing runs behind the base menu** — every way into the menu goes through `enterMenu()`, which stops the fight; launches leave through `leaveMenu()`; **Take off sits at one spot on every base stage** — its own full-width `#mainwin` grid row.) Previously: 2026-10-19 (**Mobility card text names what it does** — acceleration, turn rate, top-speed cap. Earlier today: **Take off centred on screen on Character/Craft.**) Previously: 2026-10-07 (**Server-run brawl measured on prod** — capacity and bandwidth numbers in the netsim section and `brawl-perf-findings.md` §6.) Previously: 2026-10-06 (**A server-run bot brawl (`?netbrawl=N`) and in-process server load metrics** — the same N v N fight simulated by a netsim room, the room's own step/snapshot/bytes/event-loop/CPU numbers on the card, in `perf_samples` (`srv`) and in a 10 s `evt: 'netsim-room'` log line; max 2 brawl rooms per process, 330 s backstop, 8 MB slow-link guard; `server/tools/brawl-capacity.mjs` for rooms-per-core; netsim aces now render (`ace: 1` descriptor). DECISIONS §161. Earlier today: **The brawl setup takes a typed bot count**; perf findings recorded in `docs/plans/2026-10-06-brawl-perf-findings.md`; brief for a server-run brawl in `docs/plans/2026-10-06-server-brawl-load-test.md`. 2026-10-05: **Battle sounds only from what is on screen; the radar is opaque** — DECISIONS §160. Earlier: **Double-sided ship materials draw in one pass on every tier** — the canopy glass was drawn twice per ship and re-ran three.js's program lookup each pass; −27 % render CPU at 50v50, no visible change, DECISIONS §159. Earlier: **The Sentinel pilot engages within 150 u of HIMSELF, turns and fights when chased to the arena edge (cornered), and stops on a still escort point instead of orbiting it** — wingman, duel aces and brawl bots alike, DECISIONS §158. Earlier: **The bot brawl fight is held over the home station** — a station `anchor` + 100 u leash per bot. 2026-10-04: **A bot brawl you can run on a phone (`?brawl`)** — N v N Sentinel bots over the home station, 60 s of wall time, per-window frame stats + a result card + `/api/perf` telemetry, DECISIONS §157. Also **the Sentinel pilot owns its reload stagger** — wingman and aces fire on one schedule from a private stream, `SENTINEL_PILOT` profile, DECISIONS §156. Before that, 2026-09-11: **The Sentinel pilot aims like a person, and a retreat actually leaves the fight.**
 `flySentinel` — the wingman AND every `?duel` ace, one shared constant block — now carries a tracking error
 on its PERCEIVED BEARING (a lag against the line-of-sight rate, a standing jitter, an acquisition kick), so
 the first shot at a new target misses a real hull ~18 % of the time (MEASURED, not derived) while a settled
@@ -494,15 +494,23 @@ out because they are arguments to a flow, not switches.
 | `?hitboxes` | draw the per-part OBB hitboxes |
 | `?netjerk` | diagnostic: report every break in the DRAWN motion under netsim |
 
-**They compose, with one exception that does NOT: `?duel` and `?netsim` must not be used together.** The
-flag is never forwarded on the netsim handshake (`?ally`, `?lancer` and `?beam` are). Measured:
-`?duel&netsim=1` joins a room running the plain level and leaves **two fights superimposed** — 2 aces
-spawned by the tab's own runner plus the room's real pirates as ghosts, 4 ships on screen against an
-`enemyTotal` of 2, and a loadout forced only in the tab while the room flies the account's real ship.
-The transform itself now lives in **`client/src/sim-core/duel-config.js`** (moved there for the duel
-referee, beside `withAllyAt` and `withLancersAt`) and `createSimWorld({ duel })` applies it server-side, so
-what is left to make the combination work is the **handshake hop** plus a server-side `aces` path — not
-done, because the room is not what the sparring arena is for.
+**They compose — `?duel&netsim=1` included (since 2026-10-27).** The fight flags (`?ally`, `?lancer`, `?beam`,
+`?duel`, `?brawl`) are one **fight spec** (`client/src/fight-spec-dev.js` parses it from the URL once;
+`client/src/sim-core/fight-spec.js` applies it): **`applyFightSpec`** builds the level (brawl replaces
+everything; else ally, then lancer, then duel LAST — a duel discards the script the other two edit) and
+**`resolvePlayerBuild`** builds the ship (beam first, duel's forced kit last). The tab's boot, the login reload
+(`account.js`), the level advance (`net.js`), the ship builder, both recorders, the netsim room
+(`sim-host.js createSimWorld`) and the referee (`sim-replay.mjs runTrace`) all call those two functions, so
+`?lancer` now survives a level advance and the room flies the same fight the tab built. All four of
+`ally`/`lancer`/`beam`/`duel` are forwarded on the netsim handshake (`duel=<aces>`); the room builds the duel
+room **and** the duel kit, and when a room drives the run the tab drops the local combatants its own
+`reset()` spawned on the first phase's entry (`netsim-world.js dropLocalCombatants`), so `?duel&netsim=1`
+shows exactly the room's 2 aces. **A duel never advances campaign progress** (local or netsim): `withDuelRoom`
+marks the descriptor `campaign: false`, and `sim.js` gates both halves of the advance on
+`campaign-advance.js advancesCampaign` — so a won duel ends like a side mission (victory overlay, Continue to the
+Hangar, no `/advance`). Known limit (dev-only): if that netsim duel falls back to local mid-run, the arena is
+empty and the run ends at once on an unearned "Sparring complete" — which, like every duel win, pays nothing
+beyond loot rolls and advances nothing; the next run reconnects.
 
 - **Pause button** — a ⏸/▶ toggle at the top, between the **Vega Sentinels** wordmark and the Credits
   HUD. Pausing **freezes the whole fight** (the render loop skips the sim `update` — enemies, bullets,
@@ -647,9 +655,10 @@ determinism fixture (below), the admin session viewer, "watch a fight from anoth
   snapshot per sim tick. **Stop & Save** writes the trace and offers a **Play it ▶** link. The dev
   recorder (`beginRecordCapture` / `stopRecordSession` in `main.js`) captures the flown ship via
   **`flownBuild()`** (`replay.js`) — shipId + loadout + components **and skills** when the built ship is the
-  active ship, else nulls (catalog defaults) — the same helper the live session recorder uses (it wraps the
-  result in `duelBuild`; `?record` does not, `?record&duel` is unsupported). `?beam` is not captured (same
-  known gap as the live recorder).
+  active ship, else nulls (catalog defaults) — the same helper the live session recorder uses. **Both
+  recorders** then apply the fight spec's ship half (`resolvePlayerBuild`), so a `?duel` trace records the
+  forced kit and a `?beam` trace records weapon 12 on its gun mounts, and both write the whole spec into
+  `trace.room` (`roomFromFightSpec`). `?record&duel` / `?record&beam` are therefore faithful too.
 - **Playback:** `/?playback&id={id}` (or `?playback` alone = the last recording). Loads the trace, rebuilds
   the recorded ship, re-seeds, and re-sims the fight; holds on the idle frame until the model loads, then
   plays. A top bar shows `tick / total` + Restart.
@@ -1513,8 +1522,10 @@ The catalog is flattened once, by **`client/src/sim-core/catalog.js` `catalogFro
   `advanceWhen: { kills: N }` is cumulative and `enemyTotal` is the sum of every phase's total. It is
   draw-count neutral (`pickShip` calls `simRandom()` once per spawn even for a single-entry pool), it
   composes with `?beam` (`?beam&lancer&level=4` is your beam against theirs), and it is **forwarded on the
-  netsim handshake** so a room runs the same fight. Like `?ally`, a campaign session recorded with it on
-  re-simulates into a divergence in `verify-sessions.mjs` — expected for a dev flag.
+  netsim handshake** so a room runs the same fight, and it now survives a level advance (`net.js` applies the
+  whole fight spec). Like `?ally`, a session recorded with it on carries the spec in `trace.room`
+  (`kind:'dev'`), plays back as the fight that was flown, and its row reads `dev:level-N` (unverifiable,
+  not a false disagreement — DECISIONS §170).
   - **What he flies:** the same `player_combat` .glb as you, with his **WINGS repainted blue**
     (`ALLY_ACCENT_COLOR 0x2f6bff` over the model's `Wings_`-prefixed materials, via `applyShipModel`'s
     optional `accent`). That repaint is the only thing separating him from the player in 3D: catalog ships
@@ -1725,7 +1736,8 @@ The catalog is flattened once, by **`client/src/sim-core/catalog.js` `catalogFro
     panel and no player-facing copy at all.
 - **The duel room (`?duel`) — sparring against the wingman's own pilot.** A dev-only arena
   (`client/src/duel-dev.js` for the flag + `client/src/sim-core/duel-config.js` for the descriptor
-  transform + `sim-core/ace.js`; briefs `docs/plans/duel-room.md` and
+  transform and the forced kit (`withDuelRoom`, `DUEL_LOADOUT`/`DUEL_COMPONENTS`/`withDuelKit`), applied through
+  the fight spec (`sim-core/fight-spec.js`) + `sim-core/ace.js`; briefs `docs/plans/duel-room.md` and
   `docs/plans/2026-09-01-1845-duel-referee.md`) where the player fights N
   **aces**: ships built from the wingman's exact hull and gear and flown by **the same pilot code**
   (`step-ally.js flySentinel`), pointed at the player. `?duel` = **2** aces, `?duel=N` = N (clamped to 6),
@@ -1739,7 +1751,7 @@ The catalog is flattened once, by **`client/src/sim-core/catalog.js` `catalogFro
     ship has a pilot step of its own"), and `stepAces` (`sim-core/ace.js`), which flies it in `tick.js`
     immediately after `stepAlly`. It is worth **`reward: 0, xp: 0`** — a sparring room must not pay a real
     account — though its death still rolls the ordinary 20 % loot drop, so fly the room on a throwaway
-    local player (the same caveat `?ally` carries about recorded sessions re-simulating into a divergence).
+    local player.
   - **One pilot, two sides.** `stepAlly` was generalised into **`flySentinel(world, ship, dt, ctx)`**, where
     `ctx` is `{ foes, friend, side, canFire }` (plus an optional `anchor`, the hold-station point when
     nothing is in his 150 u engage range, defaulting to `friend` — only the `?brawl` bots set it). The wingman is
@@ -1759,7 +1771,7 @@ The catalog is flattened once, by **`client/src/sim-core/catalog.js` `catalogFro
     without it, two identical ships flown by identical deterministic code held the **same distance to the
     player tick for tick** for the whole fight and volleyed their rockets in the same frame — 2 × 60 power
     landing at once, which one-shot the 100 HP starter hull.
-  - **What you fly against it:** the flag also forces the player's build (`duelBuild` in `buildPlayerFor`)
+  - **What you fly against it:** the flag also forces the player's build (`resolvePlayerBuild` → `withDuelKit` in `buildPlayerFor`, the room and both recorders)
     to the starter kit — **Basic kinetic id 1 + Rocket id 3, Basic hull id 1 (100 HP), Repair drone id 12**,
     base shield/grab, **no skills** — so the duel is the same fight on any account. The ace is the wingman:
     **200 HP, Heavy cannon id 6 + Rocket id 3, repair drone, shield**, and it **retreats at ≤25 % hull to
@@ -1779,19 +1791,25 @@ The catalog is flattened once, by **`client/src/sim-core/catalog.js` `catalogFro
   - **The aces shoot your rockets down** — point defence is part of the shared pilot (see the wingman
     above, DECISIONS §147), so an ace swats an incoming rocket whenever you are outside its 45 u gun range.
     Measured live: well over a third of the player's rockets never arrive.
-  - **A duel session is recorded, and JUDGED.** The trace carries `room: { kind:'duel', aces:N }`, the
-    recorder writes the **forced** loadout/components/skills (not the account's — `duelBuild` now wraps
-    `beginLiveSession`'s fields, or the recording would be of a fight nobody fought), the row is labelled
+  - **A duel session is recorded, and JUDGED.** The trace carries `room: { kind:'duel', aces:N }` (plus any
+    `ally`/`lancer`/`beam` riding along; a plain duel is exactly `{kind,aces}`), the recorder writes the
+    **forced** loadout/components/skills (not the account's — `beginLiveSession` applies
+    `resolvePlayerBuild`, or the recording would be of a fight nobody fought), the row is labelled
     `duel:level-N`, and the server re-simulates it and writes a **verdict**. See "Run verification" under
-    Backend. `?playback` of a duel trace rebuilds the room from the recording (`applyTraceRoom`), so the
-    admin ▶ play link shows the fight that was actually fought.
-  - **NOT usable with `?netsim=1`.** The flag is not forwarded on the handshake, so the room runs the plain
-    level while the tab runs the duel: measured, that is 4 ships
-    on screen (2 aces from the tab's own runner + 2 pirate ghosts from the room) against an `enemyTotal`
-    of 2, with the forced loadout applied only in the tab. See the dev-flag table in Tools.
+    Backend. `?playback` takes the fight spec from the TRACE (`useTraceFightSpec` → `fightSpecFromTrace`),
+    so the admin ▶ play link shows the fight that was actually fought.
+  - **Works under `?netsim=1`** — the handshake forwards `duel=<aces>`, the room builds the duel room and
+    the kit (`createSimWorld({ duel })` → `applyFightSpec` + `resolvePlayerBuild`), and the tab drops its
+    own 2 entry-spawned aces when the room starts the run, so the screen shows the room's 2 aces against an
+    `enemyTotal` of 2 (`47-duel-room`'s netsim pass). Economy is the room's ordinary sink: no credits or XP,
+    only the normal 20 % loot rolls, as locally — and **no campaign advance**, ever: the room descriptor is
+    `campaign: false`, so "Finish and Return" on a won duel never calls `commitLevelAdvance`/`loadAdvancedLevel`
+    (`client/src/campaign-advance.js`, read by the host only; the sim never looks at it). A netsim-driven duel captures no ticks, so it normally
+    uploads no session; a mid-fight fallback to local ends the run at once (empty arena, see the dev-flag
+    table in Tools).
   - **With the flag off nothing changes:** no ace, no ace step (`stepAces` returns on the first scan), no
-    phase carries `aces`, `applyDuelDev`/`duelBuild` hand the very same objects back, and not one extra
-    seeded RNG draw — the Level-0 intro trace still replays bit-identically.
+    phase carries `aces`, `applyFightSpec`/`resolvePlayerBuild` hand the very same objects back, and not one
+    extra seeded RNG draw — the Level-0 intro trace still replays bit-identically.
 - **The bot brawl (`?brawl`) — a phone load test.** (`client/src/sim-core/brawl.js` the fight,
   `client/src/brawl-dev.js` the flag, `client/src/brawl-stats.js` the numbers, `client/src/brawl-host.js` the
   setup panel / camera / measurement / card; brief `docs/plans/2026-10-04-2001-bot-brawl-load-test.md`,
@@ -3835,11 +3853,19 @@ first translation). See DECISIONS §10.
   carries `gameVersion` (the build that served the page — the drift gate), `engine` (`jsEngine()`) and, for
   a duel, `anchor`; `verdict`/`verdict_note` are written **only** by the referee and are deliberately absent
   from `recordSession`'s upsert, so a re-upload cannot erase one.
-  **A trace may name the ROOM it was fought in** — `room: { kind:'duel', aces:N }`, optional and additive,
-  so `TRACE_VERSION` stays **4** — and `trace.level` stays the catalog level the room was built over, which
-  is what keeps `buildCatalog` and `classifyTrace` working. `?beam`'s `beamLoadout` still has the hole
-  `duelBuild` just lost: **a `?beam` session records the account's gear rather than the beam that was
-  flown**. Known, named here, not fixed; the dev `?record` recorder (`flownBuild`) has the same hole.
+  **A trace records the FIGHT SPEC it was fought in** (`room`, written by `roomFromFightSpec`,
+  `client/src/sim-core/fight-spec.js`, DECISIONS §170) — optional and additive, so `TRACE_VERSION` stays
+  **4**: `{ kind:'duel', aces:N, ally?, lancer?, beam? }` for a `?duel` (a plain duel is exactly
+  `{kind:'duel',aces}`, byte-identical to older traces), `{ kind:'dev', ally?, lancer?, beam? }` for any other
+  dev fight (at least one set), `null` for a campaign run (`?brawl` records nothing). `validateTrace`
+  accepts exactly those shapes. `trace.level` stays the catalog level the room was built over, which is
+  what keeps `buildCatalog` and `classifyTrace` working. A `kind:'dev'` row is labelled **`dev:level-N`**
+  (a duel's `duel:level-N`) — kept out of the campaign funnel, and `classifyTrace` reads both prefixes as
+  `level-mismatch`, so `verify-sessions.mjs` counts them unverifiable. Both recorders store the **resolved**
+  build (`resolvePlayerBuild`), so a `?beam` trace's `loadout` carries weapon 12 on its gun mounts and a duel
+  trace the forced kit; `?playback` and `runTrace` rebuild the whole spec from the trace
+  (`fightSpecFromTrace`), re-applying the idempotent beam swap harmlessly. Old `?ally`/`?lancer`/`?beam`
+  sessions recorded before 2026-10-27 carry `room: null` and still play back as the plain level.
   **The capture order was off by one, in EVERY recorded session, until 2026-09-01.** `stepReplayTick` called
   `capture()` *after* `update(dt)` — but `update()` drains the sim events and the `cleared`/`death` handlers
   flush the session from inside that drain, so the uploaded trace was always missing **the tick on which the
@@ -3939,9 +3965,9 @@ first translation). See DECISIONS §10.
   fix — the ROOM writes the trace — waits for real multiplayer sessions.
 - **The duel referee (`server/src/seal/verify-duel.js`) — the first thing that actually re-simulates a live
   session and writes down what it found** (`docs/plans/2026-09-01-1845-duel-referee.md`, DECISIONS §150).
-  Scope is **`?duel` sessions only**; campaign rows are untouched. A duel trace carries
-  `room: { kind:'duel', aces:N }`, so `runTrace` rebuilds the same room server-side
-  (`createSimWorld({ duel })`), replays the uploaded input, and compares the **full `worldDigest` hash AND
+  Scope is **`?duel` sessions only**; campaign rows and `kind:'dev'` rows are untouched (the anchor digest is
+  sealed only when `sr.room?.kind === 'duel'`). A duel trace carries `room: { kind:'duel', aces:N, … }`, so
+  `runTrace` rebuilds the same fight spec server-side (`fightSpecFromTrace` → `createSimWorld`), replays the uploaded input, and compares the **full `worldDigest` hash AND
   the `simRandom()` draw count** — the same strict pair `36-sim-divergence` uses. `verifyDuel` returns
   `agree` / `disagree` / `unverifiable` / `error` plus a readable note, `verifyDuelSession` persists it via
   `recordSessionVerdict`, and `POST /api/sessions` calls it on `setImmediate` after the 204.
@@ -4523,7 +4549,10 @@ rows into `world.catalog`, used by the browser bootstrap and the server's `build
 `shipById`; `emptyCatalog`), `consts.js` (including `SHIP_GROUP_SCALE`, `BULLET_PLANE_Y`,
 `SPAWN_GROW_TIME`, the soft boundary's `ARENA`/`OOB_WARN_DELAY`/`OOB_RETURN_TIME`, and `TICK_HZ`/`SIM_DT` —
 the fixed sim step both hosts must agree on or they are not running the same simulation, DECISIONS §118;
-`bench.js` re-exports it as `BENCH_DT`), `events.js`,
+`bench.js` re-exports it as `BENCH_DT`; plus the netsim timing — `SNAPSHOT_EVERY`, `MAX_CATCHUP_STEPS`,
+`MAX_FRAME_SEC`), **`fight-spec.js`** (the ONE fight spec — `NO_FIGHT_SPEC`, `applyFightSpec` (level),
+`resolvePlayerBuild` (ship), `roomFromFightSpec`/`fightSpecFromTrace` (the trace round-trip); identity when
+nothing is set; the browser's URL half is `client/src/fight-spec-dev.js`), `events.js`,
 `world.js`, `spawn.js`, `ship-entity.js`, `ship-config.js`, **`ship-classes.js`** (the `SHIP_CLASSES`
 weight-class table — mass tiers as data; each row owns its explosion-blast profile), `targeting.js`, `drops-sim.js`,
 `system-map.js`, `digest.js`, **`beam-config.js`** (`withBeamGun` — the pure, unconditional "swap the gun
@@ -4596,8 +4625,9 @@ same order, so bit-identical is the correct expectation and rounding would hide 
 
 `runTrace(trace, { maxTicks, onTick, stopWhen, duel })` — `stopWhen(world, i)` ends the loop at a
 caller-chosen moment **in addition to** the default win/death break, so the digest computed after the loop
-is the digest at THAT moment (the duel referee stops at `duelAnchorReached`); `duel` overrides the room the
-world is built with and defaults to whatever `trace.room` names. Callers that pass neither are bit-for-bit
+is the digest at THAT moment (the duel referee stops at `duelAnchorReached`); the world is built from the
+whole fight spec the trace recorded (`fightSpecFromTrace(trace)` → `createSimWorld({ ally, lancer, beam, duel })`
+— all null/false for a `room:null` trace), and `duel` overrides only the duel room. Callers that pass neither are bit-for-bit
 unchanged, which is what `36-sim-divergence` re-proves. **`stopWhen` is guarded by the Level-0 trace**
 (`sim-replay.test.js`): with `stopWhen: duelAnchorReached` it stops at **tick 2657** with `cleared: true` and
 hash `0x38d48dac`, where the default run plays out all **3670** ticks to `0x8d802ca2`. That is deliberately
@@ -4624,8 +4654,8 @@ end-to-end replay path; this one guards the simulation.
 
 **`49-duel-referee` is the duel-flavoured oracle beside it, and it proves the half 36 cannot.** 36 only ever
 replays a **committed asset through `?playback`**. 49 boots `?debug&duel`, freezes the accumulator, drives
-the **live** loop with `__game.stepLive(n)` (the very same per-tick body `animate()` runs — `liveTickDeps()`
-— so a scenario produces a REAL recorded session instead of ticks the recorder never saw), lets the idle
+the **live** loop with `__game.stepLive(n)` (the very same per-tick body `animate()` runs — `liveTickDeps()`,
+built on the one `makeTickDeps` that `__replay.step` also uses, with the one `isLivePlay` predicate — so a scenario produces a REAL recorded session instead of ticks the recorder never saw), lets the idle
 player die, and requires Node to reach the same anchor tick and draw count from the trace alone, then
 `verifyDuel` to return a verdict of the expected shape. Different level (`level-1`), different driver, a
 fresh per-session seed. It also asserts `anchor.tick === trace.tickCount` — the capture-order guard in a
@@ -4813,8 +4843,11 @@ has equipped or stashed (DECISIONS §166). A brawl room skips the account read. 
 ignored everything the player owned. Reading it from the DB rather than from the client also means a client
 cannot claim a better ship than it has.
 
-**ONE CLOCK.** Snapshots go out every `SNAPSHOT_EVERY = 2` ticks (30 Hz) and frames render at 60–120, so the
-world is drawn as it was `INTERP_DELAY_MS` (100 ms — **three snapshot intervals**) ago. The timeline is made
+**ONE CLOCK.** Snapshots go out every `SNAPSHOT_EVERY = 2` ticks (30 Hz; defined in `sim-core/consts.js`,
+re-exported by `room.js`) and frames render at 60–120, so the world is drawn as it was `INTERP_DELAY_MS`
+(100 ms — **three snapshot intervals**, *derived*: `INTERP_SNAPSHOTS × SNAPSHOT_EVERY × 1000 / TICK_HZ`) ago.
+The catch-up cap `MAX_CATCHUP_STEPS = 6` and the frame clamp `MAX_FRAME_SEC` (= 6 × `SIM_DT` = 0.1 s) also
+live in `consts.js`, shared by the browser accumulator, the uplink pump and the room driver. The timeline is made
 of **server ticks, not arrival times**: `state.clock.offset` is the wall-clock instant tick 0 is due, slewed
 toward each packet's observation by `CLOCK_FOLLOW` (2%) and taken outright past `CLOCK_RESYNC_MS` (250 ms,
 i.e. a changed relationship — a paused room — rather than a jittery link). `tickAt(state, now)` gives the
@@ -5089,11 +5122,12 @@ purpose, by removing auto-aim (DECISIONS §124), which changes where bullets go.
   this module), **and the pooled charge-only HOSTILE sight**
   (`beamHostileSight*`, `#ff6b4a`, four entries, one per charging enemy); `drawBeamSight`/`startBeamCharge`/
   **`startHostileBeamCharge`**/`spawnBeamBolt`/`hideBeamFx`, all cosmetic and RNG-free), `beam-dev.js` (the
-  `?beam` dev flag — `evalBeamDev`/`beamLoadout`, URL-only, never sticky, a strict no-op when absent; wired
-  into `ship-build.js buildPlayerFor`, and **forwarded on the netsim handshake** (`beam=1`) so a ROOM mounts
-  the same weapon — the pure swap itself lives in `sim-core/beam-config.js` (`withBeamGun`) precisely so both
-  hosts can apply it — **and the `?lancer` flag beside it**: `evalLancerDev`/`lancerDev`/
-  `lancerDevLevel`/`applyLancerDev`, which swaps a phase's spawn pool for pirate lancers. The two params
+  `?beam` dev flag's parser — `evalBeamDev`, URL-only, never sticky; the flag is the fight spec's `beam` field
+  (`fight-spec-dev.js`), applied by `resolvePlayerBuild` in `ship-build.js buildPlayerFor`, both recorders and
+  the room, and **forwarded on the netsim handshake** (`beam=1`) so a ROOM mounts the same weapon — the pure
+  swap itself lives in `sim-core/beam-config.js` (`withBeamGun`) precisely so both hosts can apply it — **and
+  the `?lancer` parser beside it**: `evalLancerDev`/`lancerDevLevel`; the spec's `lancer` phase is applied by
+  `applyFightSpec`, which swaps that phase's spawn pool for pirate lancers. The two params
   compose (`?beam&lancer&level=4` is your beam against theirs) and are read independently; `?lancer` is
   forwarded on the netsim handshake so a ROOM runs the same fight, exactly as `?ally` is), `hit-fx.js` (**the receiving end of a shot** — the hull flash, the model punch and the camera shudder, plus
   the `?dev` "Hit feel" panel; `hullFlash`/`punchShip`/`cameraShudder`/`updateHitFx`/`applyCameraShake`/
@@ -5352,7 +5386,7 @@ purpose, by removing auto-aim (DECISIONS §124), which changes where bullets go.
   point of the number.
   `shop-slots.test.js` is the only automated proof the beam is
   **equippable** at all (the `?beam` flag bypasses the shop); `beam-dev.test.js` covers both flags' URL-only
-  parsing — that `beamLoadout` is identity with `?beam` off, that no spelling of `?beam` arms an enemy
+  parsing — that no spelling of `?beam` arms an enemy
   (the enemy half has its own param), and that `?beam&lancer&level=4` reads as both independently;
   `sim-core/lancer-config.test.js` pins `withLancersAt` — the pool swap, the concurrency clamp to 2,
   non-mutation of the shared seed, and above all that **`spawn.total` and `advanceWhen` come through
@@ -5422,6 +5456,25 @@ purpose, by removing auto-aim (DECISIONS §124), which changes where bullets go.
   `enemyShips` id-sorted, component/ship rows are the seed objects (no clone), the input array is not
   reordered, a refill leaves no stale entries, `shipById`; `server.test.js` `shop: unlocks…` — the stash row
   carries the `/api/weapons` row's `id/rarity/color/modelUrl/modelUrlHigh`.
+  **Duel never advances:** `client/src/campaign-advance.test.js` — a duel descriptor (over level 0/1/4, via
+  `withDuelRoom` and `applyFightSpec`) is not a campaign advance, a plain level is, and `sim.js` gates both
+  `commitLevelAdvance` and `loadAdvancedLevel` on `advancesCampaign`.
+  **B4 / B5 / C12 / C13 guards (the fight spec):** `client/src/sim-core/fight-spec.test.js` — `applyFightSpec`
+  over every flag combination on level-4 (identity off, the one order, duel last, brawl wins, no mutation),
+  `resolvePlayerBuild` (identity off, beam swap + no-loadout fallback without mutating the seed mounts, duel
+  kit, duel+beam = duel), and the trace round-trip (an old `{kind:'duel',aces}` trace rebuilds today's room; a
+  plain duel records exactly `{kind,aces}`); `client/src/fight-spec-dev.test.js` — URL parsing (no flag is
+  `NO_FIGHT_SPEC` itself; `?netbrawl=N` is `brawl:true`); `client/src/fight-spec-callsites.test.js` — a source
+  guard that main/account/net/ship-build apply the spec and name no per-flag transform, both recorders resolve
+  the build, the anchor is sealed for duels only, and `useTraceFightSpec` runs before the first level apply;
+  `server/src/sim-host.test.js` — client/server descriptor equivalence per combination, a duel world flies the
+  kit, a beam world leaves the seed row alone, sim-host imports no per-flag transform;
+  `server/src/netsim/socket.test.js` — `duel=2` on the handshake builds the duel room + kit, `duel=0`/absent is
+  none; `netsim.test.js` — `wsUrl` forwards `duel`; `replay.test.js` — `validateTrace` on `kind:'dev'`;
+  `gameplay-sessions.test.js` — a `kind:'dev'` row is `dev:level-4` and never judged; `netsim-world.test.js` —
+  `dropLocalCombatants`, `INTERP_DELAY_MS` derived, `MAX_FRAME_SEC === 0.1`; `driver.test.js` — the
+  room/driver re-exports equal the consts; `47-duel-room`'s `?duel&netsim=1` pass — exactly 2 aces on screen,
+  welcome `enemyTotal` 2, the kit `[1, 3]`.
 - **Level-id drift** — `server/src/levels_drift.test.js` (2): runs against its own throwaway DB
   (`spacegame_test_drift`, created + dropped by the file, so `spacegame_test` is untouched), re-ids the
   levels to the production drift shape (1, 6, 7, 71, 564) while no player rows exist, then asserts the

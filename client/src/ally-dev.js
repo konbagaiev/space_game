@@ -25,15 +25,16 @@
 // byte-identical world (DECISIONS §73).
 //
 // TWO CAVEATS WORTH KNOWING, both inherent to it being a dev flag:
-//   • `?ally` changes the FIGHT, and campaign sessions are recorded. A session played with it on contains an
-//     entity the level descriptor on the SERVER does not produce, so `server/tools/sim-replay.mjs` and
-//     `server/tools/verify-sessions.mjs` re-simulate it into a divergence and file it under "disagree".
-//     Expected, not a bug: it is a dev session, not evidence about the build.
+//   • `?ally` changes the FIGHT, and campaign sessions are recorded. The session's trace therefore carries
+//     the whole fight spec (`trace.room = { kind:'dev', ally:<phase>, … }`, `sim-core/fight-spec.js`), so ▶ play
+//     and `server/tools/sim-replay.mjs` rebuild the fight that was flown, and the row is labelled `dev:level-N`
+//     — `classifyTrace` reads that as `level-mismatch`, so `verify-sessions.mjs` counts it as unverifiable
+//     instead of filing a dev session under "disagree" (DECISIONS §170).
 //   • `&level=` forces the level THIS TAB FLIES, not the account's progress. Winning it still advances the
 //     account the server-side way (`/advance` reads the player's own row), and after that advance the tab
 //     follows the account again — the phase injection keeps applying, the forced level does not. Prefer
 //     `?ally` runs on a throwaway local player.
-import { withAllyAt, DEV_ALLY_DEFAULT_PHASE } from './sim-core/ally-config.js';
+import { DEV_ALLY_DEFAULT_PHASE } from './sim-core/ally-config.js';
 import { normalizeLevelName } from './replay.js';
 
 // Pure + storage-free, so it is unit-testable without a DOM: the URL alone decides.
@@ -54,15 +55,7 @@ export function evalAllyDev(search) {
 
 const ALLY_DEV = evalAllyDev(typeof location !== 'undefined' ? location.search : '');
 
-// The flag for this page load, or null.
-export function allyDev() { return ALLY_DEV; }
-
 // The level `?ally&level=…` forces, or null to follow the account/trace as usual. Read once at bootstrap,
-// where the level descriptor is fetched.
+// where the level descriptor is fetched. (The PHASE half is a field of the fight spec — `fight-spec-dev.js`
+// parses it, and `sim-core/fight-spec.js applyFightSpec` applies it in every host.)
 export function allyDevLevel() { return ALLY_DEV && ALLY_DEV.level; }
-
-// Wrap a level descriptor on its way into the catalog. A no-op with the flag off — the SAME object comes
-// back out, so nothing about a normal run changes.
-export function applyAllyDev(descriptor) {
-  return ALLY_DEV ? withAllyAt(descriptor, ALLY_DEV.phase) : descriptor;
-}

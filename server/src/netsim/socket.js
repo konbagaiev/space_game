@@ -15,6 +15,7 @@ import { createRoom } from './room.js';
 import { createDriver } from './driver.js';
 import { health } from './health.js';
 import { clampBrawlN, BRAWL_SEC_MAX } from '../../../client/src/sim-core/brawl.js';
+import { ACE_COUNT_MAX } from '../../../client/src/sim-core/ace.js';
 
 export const WS_PATH = '/ws';
 // A room with nobody on the other end is a leak, and liveness is measured at the TRANSPORT, not in the game
@@ -96,7 +97,7 @@ export function attachNetsim(httpServer, { tickets, loadShip = null, bankRun = n
     if (sessions.size >= MAX_ROOMS) return destroy(socket, 503);
     wss.handleUpgrade(req, socket, head, (ws) => {
       log.info?.(`[netsim] join player=${redeemed.playerId} origin=${req.headers.origin || '-'} `
-        + `brawl=${url.searchParams.get('brawl') || '-'}`);
+        + `brawl=${url.searchParams.get('brawl') || '-'} duel=${url.searchParams.get('duel') || '-'}`);
       open(ws, redeemed, url.searchParams);
     });
   });
@@ -144,6 +145,11 @@ export function attachNetsim(httpServer, { tickets, loadShip = null, bankRun = n
       // ?beam=1 on the handshake: mount the player's Charged beam in the ROOM too. Without it the server
       // flies the account's real gun while the client draws a beam sight over it (see sim-core/beam-config.js).
       const beam = params.get('beam') === '1';
+      // ?duel=<aces> on the handshake: the room builds the `?duel` sparring room AND forces the duel kit on the
+      // player (sim-host.js createSimWorld → sim-core/fight-spec.js), so a server-run duel is the fight the tab
+      // built. Parsed like `brawl`: a positive integer, clamped to ACE_COUNT_MAX; anything else is no duel.
+      const duelRaw = Number.parseInt(params.get('duel'), 10);
+      const duel = Number.isFinite(duelRaw) && duelRaw > 0 ? { aces: Math.min(ACE_COUNT_MAX, duelRaw) } : null;
       const seed = (Number(params.get('seed')) >>> 0) || (Math.random() * 0xffffffff) >>> 0;
       // The player's real ship, from their account. A lookup failure is not fatal — the room falls back to
       // the catalog default, which is what every room used to fly.
@@ -162,7 +168,7 @@ export function attachNetsim(httpServer, { tickets, loadShip = null, bankRun = n
       try {
         // A brawl room gets NO economy sink at all — it never pays, belt and braces (it also emits nothing
         // that would: the parked spectator is never stepped).
-        room = createRoomFn({ levelName, seed, ship, ally, lancer, beam, brawl,
+        room = createRoomFn({ levelName, seed, ship, ally, lancer, beam, duel, brawl,
           onEconomy: brawl ? null : makeEconomySink({ playerId, level: levelName, bankRun, log }) });
       } catch (err) {
         release();

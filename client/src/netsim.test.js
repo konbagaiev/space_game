@@ -29,16 +29,18 @@ test('wsUrl carries the ticket, the level and the seed', () => {
   assert.equal(u.searchParams.get('seed'), '9');
 });
 
-// THE THREE DEV FLAGS THAT CHANGE THE FIGHT MUST ALL REACH THE ROOM. A dev flag applied only in the browser
+// THE FOUR DEV FLAGS THAT CHANGE THE FIGHT MUST ALL REACH THE ROOM — ally, lancer, beam and duel. A dev flag applied only in the browser
 // gives the two ends different worlds, and the failure is silent-looking rather than loud: `?beam` used to
 // be client-only, so a room flew the account's real machine gun while this tab drew a green beam sight over
-// it (fixed 2026-08-25, after the maintainer hit it). Absent flags must add no params at all, so an ordinary
+// it (fixed 2026-08-25, after the maintainer hit it), and `?duel` was simply never forwarded, so
+// `?duel&netsim=1` fought a plain level in the room under a duel in the tab (fixed 2026-10-27). Absent flags must add no params at all, so an ordinary
 // room's URL is unchanged.
-test('wsUrl forwards the dev flags — ally, lancer and beam — and adds nothing when they are absent', () => {
+test('wsUrl forwards the dev flags — ally, lancer, beam and duel — and adds nothing when they are absent', () => {
   const plain = new URL(wsUrl({ apiBase: '', origin: 'http://x', ticket: 't1', level: 'level-4' }));
   assert.equal(plain.searchParams.get('ally'), null);
   assert.equal(plain.searchParams.get('lancer'), null);
   assert.equal(plain.searchParams.get('beam'), null, 'a normal room is asked for nothing extra');
+  assert.equal(plain.searchParams.get('duel'), null, '…and no duel');
 
   const dev = new URL(wsUrl({ apiBase: '', origin: 'http://x', ticket: 't1', level: 'level-4',
                               ally: 'clear-out', lancer: 'wave-1', beam: true }));
@@ -48,6 +50,10 @@ test('wsUrl forwards the dev flags — ally, lancer and beam — and adds nothin
 
   // The three compose — `?beam&lancer&level=4` in a room is the full test flight, your beam against theirs.
   assert.equal(new URL(wsUrl({ apiBase: '', origin: 'http://x', ticket: 't', beam: true })).searchParams.get('beam'), '1');
+
+  // `duel` is the spec's `{ aces }`; the wire carries the count, and the ROOM builds the room and the kit.
+  assert.equal(new URL(wsUrl({ apiBase: '', origin: 'http://x', ticket: 't', level: 'level-1', duel: { aces: 2 } }))
+    .searchParams.get('duel'), '2');
 });
 
 test('the uplink turns elapsed time into whole 60 Hz input ticks', () => {
